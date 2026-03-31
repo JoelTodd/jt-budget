@@ -1,0 +1,45 @@
+---
+source: budget-app/src/ui.rs
+assertion_line: 1091
+expression: "buffer_to_string(draw_route(&route, Some(&config), 120, 40))"
+---
+┌Guided Creation───────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│May 2026  |  Step 13/14                                                                                               │
+│Type amount | Backspace delete | Enter save step | Esc months | q quit                                                │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌Current Step────────────────────────────────────┐┌Live Preview────────────────────────────────────────────────────────┐
+│Subscriptions                                   ││Accounts £0.00 | Timing Adjustments £0.00                           │
+│                                                ││Next Month Earmarks £505.00 | Savings Pots £240.00                  │
+│Type digits or decimals, then press Enter to    ││Total allocated £745.00 | Overall difference -£745.00               │
+│autosave.                                       ││Status invalid                                                      │
+│                                                ││                                                                    │
+│Input: £130.00                                  ││                                                                    │
+│                                                ││                                                                    │
+│Next steps:                                     ││                                                                    │
+│• General spending                              ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+│                                                ││                                                                    │
+└────────────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────┘
+┌Status────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│Persistence: clean  |  Sync: synced                                                                                   │
+│Validation: outside tolerance  |  Difference: -£745.00                                                                │
+│The draft is saved as you confirm each guided step.                                                                   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
