@@ -506,18 +506,17 @@ fn render_accounts(
 ) {
     let rows = state.calculated.account_rows.iter().map(|row| {
         let field = FieldId::Account(row.id.clone());
+        let focus = field_focus_state(state, &field);
         Row::new(vec![
-            Cell::from(row.label.clone()),
+            labeled_row_cell(&row.label, focus),
             Cell::from(match row.kind {
                 AccountKind::Asset => "+",
                 AccountKind::Liability => "-",
             }),
-            styled_value_cell(
-                value_for_field(state, &field, &state.document),
-                is_selected(state, &field),
-            ),
+            styled_value_cell(value_for_field(state, &field, &state.document), focus),
             amount_cell(row.normalised_balance.format()),
         ])
+        .style(focused_row_style(focus))
     });
     let table = Table::new(
         rows,
@@ -552,6 +551,7 @@ fn render_accounts(
             "Subtotal {}",
             state.calculated.totals.accounts_subtotal.format()
         ),
+        section_focus_state(state, SectionId::Accounts),
     ));
     frame.render_widget(table, area);
 }
@@ -565,12 +565,14 @@ fn render_timing(
 ) {
     let correction = FieldId::PreviousMonthSpendingCorrection;
     let investment = FieldId::InvestmentNotYetSent;
+    let correction_focus = field_focus_state(state, &correction);
+    let investment_focus = field_focus_state(state, &investment);
     let rows = vec![
         Row::new(vec![
-            Cell::from("General spending over/under"),
+            labeled_row_cell("General spending over/under", correction_focus),
             styled_value_cell(
                 value_for_field(state, &correction, &state.document),
-                is_selected(state, &correction),
+                correction_focus,
             ),
             amount_cell(
                 state
@@ -579,15 +581,17 @@ fn render_timing(
                     .previous_month_spending_correction_effect
                     .format(),
             ),
-        ]),
+        ])
+        .style(focused_row_style(correction_focus)),
         Row::new(vec![
-            Cell::from("Investment not yet sent"),
+            labeled_row_cell("Investment not yet sent", investment_focus),
             styled_value_cell(
                 value_for_field(state, &investment, &state.document),
-                is_selected(state, &investment),
+                investment_focus,
             ),
             amount_cell(state.calculated.timing.investment_effect.format()),
-        ]),
+        ])
+        .style(focused_row_style(investment_focus)),
     ];
     let table = Table::new(
         rows,
@@ -611,6 +615,7 @@ fn render_timing(
             "Subtotal {}",
             state.calculated.totals.timing_adjustments_subtotal.format()
         ),
+        section_focus_state(state, SectionId::TimingAdjustments),
     ));
     frame.render_widget(table, area);
 }
@@ -624,13 +629,12 @@ fn render_earmarks(
 ) {
     let rows = state.calculated.earmark_rows.iter().map(|row| {
         let field = FieldId::Earmark(row.id.clone());
+        let focus = field_focus_state(state, &field);
         Row::new(vec![
-            Cell::from(row.label.clone()),
-            styled_value_cell(
-                value_for_field(state, &field, &state.document),
-                is_selected(state, &field),
-            ),
+            labeled_row_cell(&row.label, focus),
+            styled_value_cell(value_for_field(state, &field, &state.document), focus),
         ])
+        .style(focused_row_style(focus))
     });
     let table = Table::new(
         rows,
@@ -656,6 +660,7 @@ fn render_earmarks(
                 .next_month_earmarks_subtotal
                 .format()
         ),
+        section_focus_state(state, SectionId::NextMonthEarmarks),
     ));
     frame.render_widget(table, area);
 }
@@ -674,18 +679,22 @@ fn render_pots(
         .map(|row| {
             let carried = FieldId::PotCarried(row.id.clone());
             let change = FieldId::PotChange(row.id.clone());
+            let carried_focus = field_focus_state(state, &carried);
+            let change_focus = field_focus_state(state, &change);
+            let row_focus = combined_focus_state(carried_focus, change_focus);
             Row::new(vec![
-                Cell::from(row.label.clone()),
+                labeled_row_cell(&row.label, row_focus),
                 styled_value_cell(
                     value_for_field(state, &carried, &state.document),
-                    is_selected(state, &carried),
+                    carried_focus,
                 ),
                 styled_value_cell(
                     value_for_field(state, &change, &state.document),
-                    is_selected(state, &change),
+                    change_focus,
                 ),
                 amount_cell(row.final_balance.format()),
             ])
+            .style(focused_row_style(row_focus))
         })
         .collect::<Vec<_>>();
     rows.push(
@@ -731,6 +740,7 @@ fn render_pots(
             "Subtotal {}",
             state.calculated.totals.pots_final_total.format()
         ),
+        section_focus_state(state, SectionId::SavingsPots),
     ));
     frame.render_widget(table, area);
 }
@@ -739,8 +749,40 @@ fn selected_field(state: &EditorState) -> Option<&FieldId> {
     state.fields.get(state.focus_index)
 }
 
-fn is_selected(state: &EditorState, field: &FieldId) -> bool {
-    selected_field(state).is_some_and(|selected| selected == field)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditorFocusState {
+    Unfocused,
+    Selected,
+    Editing,
+}
+
+fn field_focus_state(state: &EditorState, field: &FieldId) -> EditorFocusState {
+    if selected_field(state).is_none_or(|selected| selected != field) {
+        return EditorFocusState::Unfocused;
+    }
+    match state.interaction {
+        InteractionState::SheetIdle => EditorFocusState::Selected,
+        InteractionState::FieldEditing => EditorFocusState::Editing,
+    }
+}
+
+fn section_focus_state(state: &EditorState, section: SectionId) -> EditorFocusState {
+    selected_field(state)
+        .filter(|field| field.section() == section)
+        .map(|field| field_focus_state(state, field))
+        .unwrap_or(EditorFocusState::Unfocused)
+}
+
+fn combined_focus_state(left: EditorFocusState, right: EditorFocusState) -> EditorFocusState {
+    match (left, right) {
+        (EditorFocusState::Editing, _) | (_, EditorFocusState::Editing) => {
+            EditorFocusState::Editing
+        }
+        (EditorFocusState::Selected, _) | (_, EditorFocusState::Selected) => {
+            EditorFocusState::Selected
+        }
+        _ => EditorFocusState::Unfocused,
+    }
 }
 
 fn value_for_field(state: &EditorState, field: &FieldId, document: &MonthDocument) -> String {
@@ -760,12 +802,43 @@ fn value_for_field(state: &EditorState, field: &FieldId, document: &MonthDocumen
     field.current_value_text(document)
 }
 
-fn styled_value_cell(value: String, selected: bool) -> Cell<'static> {
+fn styled_value_cell(value: String, focus: EditorFocusState) -> Cell<'static> {
     let cell = amount_cell(value);
-    if selected {
-        cell.style(Style::default().bg(Color::DarkGray).fg(Color::White))
-    } else {
-        cell
+    match focus {
+        EditorFocusState::Unfocused => cell,
+        EditorFocusState::Selected => cell.style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        EditorFocusState::Editing => cell.style(
+            Style::default()
+                .bg(Color::Yellow)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
+    }
+}
+
+fn labeled_row_cell(label: &str, focus: EditorFocusState) -> Cell<'static> {
+    Cell::from(format!("{}{}", focus_marker(focus), label))
+}
+
+fn focus_marker(focus: EditorFocusState) -> &'static str {
+    match focus {
+        EditorFocusState::Unfocused => "  ",
+        EditorFocusState::Selected => "› ",
+        EditorFocusState::Editing => "✎ ",
+    }
+}
+
+fn focused_row_style(focus: EditorFocusState) -> Style {
+    match focus {
+        EditorFocusState::Unfocused => Style::default(),
+        EditorFocusState::Selected | EditorFocusState::Editing => {
+            Style::default().bg(Color::DarkGray).fg(Color::White)
+        }
     }
 }
 
@@ -832,12 +905,30 @@ fn abbreviate_path(path: &Path, max_width: usize) -> String {
     format!("...{}", &text[text.len() - (max_width - 3)..])
 }
 
-fn section_block(title: Option<&str>, subtotal: String) -> Block<'static> {
-    let mut block = Block::default().borders(Borders::ALL);
+fn section_block(title: Option<&str>, subtotal: String, focus: EditorFocusState) -> Block<'static> {
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(section_emphasis_style(focus));
     if let Some(title) = title {
-        block = block.title(Line::from(title.to_owned()));
+        block = block.title(
+            Line::from(title.to_owned())
+                .style(section_emphasis_style(focus))
+                .alignment(Alignment::Left),
+        );
     }
     block.title(Line::from(subtotal).alignment(Alignment::Right))
+}
+
+fn section_emphasis_style(focus: EditorFocusState) -> Style {
+    match focus {
+        EditorFocusState::Unfocused => Style::default(),
+        EditorFocusState::Selected => Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+        EditorFocusState::Editing => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    }
 }
 
 fn compact_summary_text(calculated: &CalculatedMonth, width: u16) -> Text<'static> {
@@ -968,6 +1059,7 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
+    use ratatui::prelude::{Color, Modifier};
 
     use super::render;
     use crate::state::{
@@ -1074,6 +1166,51 @@ mod tests {
     }
 
     #[test]
+    fn editor_render_shows_idle_focus_marker_and_active_section_emphasis() {
+        let config = AppConfig::default_mvp();
+        let buffer = draw_route(&editor_route(&config), Some(&config), 105, 48);
+        let rendered = buffer_to_string(buffer.clone());
+
+        assert!(rendered.contains("› Fun expensive stuff"));
+
+        let (marker_x, marker_y) = find_text(&buffer, "› Fun expensive stuff").unwrap();
+        let marker = &buffer[(marker_x, marker_y)];
+        assert_eq!(marker.fg, Color::White);
+        assert_eq!(marker.bg, Color::DarkGray);
+
+        let (title_x, title_y) = find_text(&buffer, "Savings Pots").unwrap();
+        let title = &buffer[(title_x, title_y)];
+        assert_eq!(title.fg, Color::Cyan);
+        assert!(title.modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn editor_render_distinguishes_editing_from_idle_focus() {
+        let config = AppConfig::default_mvp();
+        let buffer = draw_route(
+            &editor_route_with_state(&config, 8, InteractionState::FieldEditing),
+            Some(&config),
+            105,
+            48,
+        );
+        let rendered = buffer_to_string(buffer.clone());
+
+        assert!(rendered.contains("✎ Fun expensive stuff"));
+        assert!(rendered.contains("£820.00_"));
+
+        let (value_x, value_y) = find_text(&buffer, "£820.00_").unwrap();
+        let value = &buffer[(value_x, value_y)];
+        assert_eq!(value.fg, Color::Black);
+        assert_eq!(value.bg, Color::Yellow);
+        assert!(value.modifier.contains(Modifier::BOLD));
+
+        let (title_x, title_y) = find_text(&buffer, "Savings Pots").unwrap();
+        let title = &buffer[(title_x, title_y)];
+        assert_eq!(title.fg, Color::Yellow);
+        assert!(title.modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
     fn editor_large_layout_keeps_section_titles_and_omits_titular_column_headers() {
         let config = AppConfig::default_mvp();
         let route = editor_route(&config);
@@ -1135,6 +1272,14 @@ mod tests {
     }
 
     fn editor_route(config: &AppConfig) -> Route {
+        editor_route_with_state(config, 8, InteractionState::SheetIdle)
+    }
+
+    fn editor_route_with_state(
+        config: &AppConfig,
+        focus_index: usize,
+        interaction: InteractionState,
+    ) -> Route {
         let mut document =
             MonthDocument::new_draft(MonthId::parse("2026-04").unwrap(), config, None);
         document.accounts.insert("current".to_owned(), 250_000);
@@ -1171,14 +1316,17 @@ mod tests {
             },
         );
         let calculated = calculate_month(config, &document).unwrap();
+        let fields = FieldId::editor_fields(config);
+        let edit_buffer = (interaction == InteractionState::FieldEditing)
+            .then(|| MoneyInput::from_field(&fields[focus_index], &document));
         Route::MonthEditing(EditorState {
             document,
             calculated,
-            fields: FieldId::editor_fields(config),
-            focus_index: 8,
-            edit_buffer: None,
+            fields,
+            focus_index,
+            edit_buffer,
             message: Some("Month autosaved and synced".to_owned()),
-            interaction: InteractionState::SheetIdle,
+            interaction,
             persistence: PersistenceState::Clean,
             sync: SyncState::Synced,
         })
@@ -1273,5 +1421,30 @@ mod tests {
             output.push('\n');
         }
         output
+    }
+
+    fn find_text(buffer: &Buffer, text: &str) -> Option<(u16, u16)> {
+        let symbols = text
+            .chars()
+            .map(|character| character.to_string())
+            .collect::<Vec<_>>();
+        let width = symbols.len() as u16;
+        if width == 0 || width > buffer.area.width {
+            return None;
+        }
+
+        for y in 0..buffer.area.height {
+            for x in 0..=buffer.area.width - width {
+                let matches = symbols
+                    .iter()
+                    .enumerate()
+                    .all(|(offset, symbol)| buffer[(x + offset as u16, y)].symbol() == symbol);
+                if matches {
+                    return Some((x, y));
+                }
+            }
+        }
+
+        None
     }
 }
