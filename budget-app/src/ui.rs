@@ -205,7 +205,7 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, title: &str, lines: &[String
 }
 
 fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, config: &AppConfig) {
-    let compact = frame.area().width < 110 || frame.area().height < 28;
+    let profile = GuidedLayoutProfile::for_area(frame.area());
     let mut header_lines = vec![Line::from(format!(
         "{}  |  Step {}/{}",
         state.document.month.display_label(),
@@ -214,86 +214,221 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
     ))];
     header_lines.extend(hint_lines(
         frame.area().width,
-        &[
-            "Type amount",
-            "Backspace delete",
-            "Enter save step",
-            "Esc months",
-            "q quit",
-        ],
+        match profile {
+            GuidedLayoutProfile::Compact => &["Type amount", "Enter save", "Esc months", "q quit"],
+            GuidedLayoutProfile::Standard | GuidedLayoutProfile::Wide => &[
+                "Type amount",
+                "Backspace delete",
+                "Enter save step",
+                "Esc months",
+                "q quit",
+            ],
+        },
     ));
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header_lines.len() as u16 + 2),
             Constraint::Min(8),
-            Constraint::Length(if compact { 4 } else { 5 }),
+            Constraint::Length(match profile {
+                GuidedLayoutProfile::Compact => 3,
+                GuidedLayoutProfile::Standard => 5,
+                GuidedLayoutProfile::Wide => 4,
+            }),
         ])
         .split(frame.area());
 
-    let header = Paragraph::new(header_lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Guided Creation"),
-    );
+    let header =
+        Paragraph::new(header_lines).block(panel_block("Guided Creation", PanelChrome::Boxed));
     frame.render_widget(header, layout[0]);
 
-    let body = if compact {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(10), Constraint::Min(8)])
-            .split(layout[1])
-    } else {
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
-            .split(layout[1])
-    };
-
     let current_step = &state.steps[state.step_index];
-    let mut step_lines = vec![
-        Line::from(current_step.label(config)),
-        Line::from(""),
-        Line::from("Type digits or decimals, then press Enter to autosave."),
-        Line::from(""),
-        Line::from(format!(
-            "Input: {}{}",
-            state.input.display_text(),
-            if state.input.is_edited() { "_" } else { "" }
-        )),
-    ];
-    if let Some(message) = state
-        .message
-        .as_deref()
-        .filter(|message| !is_guided_status_message(message))
-    {
-        step_lines.push(Line::from(""));
-        step_lines.push(Line::from(message.to_owned()));
-    }
-    step_lines.push(Line::from(""));
-    step_lines.push(Line::from("Next steps:"));
-    for step in state
-        .steps
-        .iter()
-        .skip(state.step_index + 1)
-        .take(if compact { 3 } else { 5 })
-    {
-        step_lines.push(Line::from(format!("• {}", step.label(config))));
-    }
-    frame.render_widget(
-        Paragraph::new(step_lines)
-            .block(Block::default().borders(Borders::ALL).title("Current Step"))
-            .wrap(Wrap { trim: false }),
-        body[0],
-    );
-
-    let preview = Paragraph::new(compact_summary_text(&state.calculated, body[1].width))
-        .block(Block::default().borders(Borders::ALL).title("Live Preview"))
+    let step_widget = Paragraph::new(guided_step_text(state, config, current_step, profile))
+        .block(panel_block("Current Step", guided_panel_chrome(profile)))
         .wrap(Wrap { trim: false });
-    frame.render_widget(preview, body[1]);
+
+    match profile {
+        GuidedLayoutProfile::Compact => {
+            let body = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(11), Constraint::Min(5)])
+                .split(layout[1]);
+            frame.render_widget(step_widget, body[0]);
+            frame.render_widget(
+                Paragraph::new(guided_preview_text(state, body[1].width, profile))
+                    .block(panel_block("Preview", PanelChrome::Boxed))
+                    .wrap(Wrap { trim: false }),
+                body[1],
+            );
+        }
+        GuidedLayoutProfile::Standard => {
+            let body = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
+                .split(layout[1]);
+            frame.render_widget(step_widget, body[0]);
+            frame.render_widget(
+                Paragraph::new(guided_preview_text(state, body[1].width, profile))
+                    .block(panel_block("Live Preview", PanelChrome::Boxed))
+                    .wrap(Wrap { trim: false }),
+                body[1],
+            );
+        }
+        GuidedLayoutProfile::Wide => {
+            let body = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(37),
+                    Constraint::Length(2),
+                    Constraint::Percentage(63),
+                ])
+                .split(layout[1]);
+            frame.render_widget(step_widget, body[0]);
+            frame.render_widget(
+                Paragraph::new(guided_preview_text(state, body[2].width, profile))
+                    .block(panel_block("Live Preview", PanelChrome::TopRule))
+                    .wrap(Wrap { trim: false }),
+                body[2],
+            );
+        }
+    }
 
     frame.render_widget(
-        Paragraph::new(vec![
+        Paragraph::new(guided_status_lines(state, profile))
+            .block(panel_block("Status", guided_panel_chrome(profile)))
+            .wrap(Wrap { trim: false }),
+        layout[2],
+    );
+}
+
+fn guided_step_text(
+    state: &GuidedCreationState,
+    config: &AppConfig,
+    current_step: &FieldId,
+    profile: GuidedLayoutProfile,
+) -> Text<'static> {
+    match profile {
+        GuidedLayoutProfile::Compact => {
+            let mut lines = vec![
+                Line::from(current_step.label(config)),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Amount",
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    format!(
+                        "{}{}",
+                        state.input.display_text(),
+                        if state.input.is_edited() { "_" } else { "" }
+                    ),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+            ];
+            if let Some(message) = state
+                .message
+                .as_deref()
+                .filter(|message| !is_guided_status_message(message))
+            {
+                lines.push(Line::from(""));
+                lines.push(Line::from(message.to_owned()));
+            } else {
+                lines.push(Line::from(""));
+                lines.push(Line::from("Enter saves this step."));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(guided_next_step_line(state, config)));
+            Text::from(lines)
+        }
+        GuidedLayoutProfile::Standard | GuidedLayoutProfile::Wide => {
+            let mut lines = vec![
+                Line::from(current_step.label(config)),
+                Line::from(""),
+                Line::from("Type digits or decimals, then press Enter to autosave."),
+                Line::from(""),
+                Line::from(format!(
+                    "Input: {}{}",
+                    state.input.display_text(),
+                    if state.input.is_edited() { "_" } else { "" }
+                )),
+            ];
+            if let Some(message) = state
+                .message
+                .as_deref()
+                .filter(|message| !is_guided_status_message(message))
+            {
+                lines.push(Line::from(""));
+                lines.push(Line::from(message.to_owned()));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from("Next steps:"));
+            for step in state.steps.iter().skip(state.step_index + 1).take(
+                if profile == GuidedLayoutProfile::Wide {
+                    6
+                } else {
+                    5
+                },
+            ) {
+                lines.push(Line::from(format!("• {}", step.label(config))));
+            }
+            Text::from(lines)
+        }
+    }
+}
+
+fn guided_next_step_line(state: &GuidedCreationState, config: &AppConfig) -> String {
+    state
+        .steps
+        .get(state.step_index + 1)
+        .map(|step| format!("Next: {}", step.label(config)))
+        .unwrap_or_else(|| "Final step.".to_owned())
+}
+
+fn guided_preview_text(
+    state: &GuidedCreationState,
+    width: u16,
+    profile: GuidedLayoutProfile,
+) -> Text<'static> {
+    match profile {
+        GuidedLayoutProfile::Compact => Text::from(vec![
+            Line::from(format!(
+                "Accounts {}  |  Pots {}",
+                state.calculated.totals.accounts_subtotal.format(),
+                state.calculated.totals.pots_final_total.format()
+            )),
+            Line::from(format!(
+                "Earmarks {}  |  Diff {}",
+                state
+                    .calculated
+                    .totals
+                    .next_month_earmarks_subtotal
+                    .format(),
+                state.calculated.validation.overall_difference.format()
+            )),
+            Line::from(format!(
+                "Status {}",
+                if state.calculated.validation.is_valid {
+                    "valid"
+                } else {
+                    "invalid"
+                }
+            )),
+        ]),
+        GuidedLayoutProfile::Standard | GuidedLayoutProfile::Wide => {
+            compact_summary_text(&state.calculated, width)
+        }
+    }
+}
+
+fn guided_status_lines(
+    state: &GuidedCreationState,
+    profile: GuidedLayoutProfile,
+) -> Vec<Line<'static>> {
+    match profile {
+        GuidedLayoutProfile::Compact => {
+            vec![Line::from(status_line(state.persistence, state.sync))]
+        }
+        GuidedLayoutProfile::Standard => vec![
             Line::from(status_line(state.persistence, state.sync)),
             Line::from(format!(
                 "Validation: {}  |  Difference: {}",
@@ -305,11 +440,27 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
                 state.calculated.validation.overall_difference.format()
             )),
             Line::from("The draft is saved as you confirm each guided step."),
-        ])
-        .block(Block::default().borders(Borders::ALL).title("Status"))
-        .wrap(Wrap { trim: false }),
-        layout[2],
-    );
+        ],
+        GuidedLayoutProfile::Wide => vec![
+            Line::from(status_line(state.persistence, state.sync)),
+            Line::from(format!(
+                "Validation: {}  |  Difference: {}",
+                if state.calculated.validation.is_valid {
+                    "within tolerance"
+                } else {
+                    "outside tolerance"
+                },
+                state.calculated.validation.overall_difference.format()
+            )),
+        ],
+    }
+}
+
+fn guided_panel_chrome(profile: GuidedLayoutProfile) -> PanelChrome {
+    match profile {
+        GuidedLayoutProfile::Compact | GuidedLayoutProfile::Standard => PanelChrome::Boxed,
+        GuidedLayoutProfile::Wide => PanelChrome::TopRule,
+    }
 }
 
 fn render_editor(frame: &mut Frame<'_>, state: &EditorState, config: &AppConfig) {
@@ -323,7 +474,11 @@ fn render_editor(frame: &mut Frame<'_>, state: &EditorState, config: &AppConfig)
             &["Enter edit", "Tab/Shift-Tab move", "Esc months", "q quit"]
         },
     ));
-    let footer_height = 4;
+    let footer_height = if profile == EditorLayoutProfile::Wide {
+        3
+    } else {
+        4
+    };
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -346,33 +501,41 @@ fn render_editor(frame: &mut Frame<'_>, state: &EditorState, config: &AppConfig)
         EditorLayoutProfile::Compact => render_editor_compact(frame, layout[1], state, config),
     }
 
-    render_editor_footer(
-        frame,
-        layout[2],
-        state,
-        config,
-        profile == EditorLayoutProfile::Compact,
-    );
+    render_editor_footer(frame, layout[2], state, config, profile);
 }
 
 fn render_editor_wide(frame: &mut Frame<'_>, area: Rect, state: &EditorState, config: &AppConfig) {
     let columns = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(54), Constraint::Percentage(46)])
+        .constraints([
+            Constraint::Percentage(54),
+            Constraint::Length(2),
+            Constraint::Percentage(46),
+        ])
         .split(area);
     let left = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(section_height(state.calculated.account_rows.len(), false)),
+            Constraint::Length(1),
             Constraint::Length(section_height(2, false)),
+            Constraint::Length(1),
             Constraint::Min(section_height(state.calculated.earmark_rows.len(), false)),
         ])
         .split(columns[0]);
 
-    render_accounts(frame, left[0], state, config, false, true);
-    render_timing(frame, left[1], state, false, true);
-    render_earmarks(frame, left[2], state, false, true);
-    render_pots(frame, columns[1], state, false, true);
+    render_accounts(
+        frame,
+        left[0],
+        state,
+        config,
+        false,
+        true,
+        PanelChrome::TopRule,
+    );
+    render_timing(frame, left[2], state, false, true, PanelChrome::TopRule);
+    render_earmarks(frame, left[4], state, false, true, PanelChrome::TopRule);
+    render_pots(frame, columns[2], state, false, true, PanelChrome::TopRule);
 }
 
 fn render_editor_standard(
@@ -390,10 +553,18 @@ fn render_editor_standard(
             Constraint::Min(section_height(state.calculated.pot_rows.len() + 2, false)),
         ])
         .split(area);
-    render_accounts(frame, rows[0], state, config, false, true);
-    render_timing(frame, rows[1], state, true, true);
-    render_earmarks(frame, rows[2], state, true, true);
-    render_pots(frame, rows[3], state, false, true);
+    render_accounts(
+        frame,
+        rows[0],
+        state,
+        config,
+        false,
+        true,
+        PanelChrome::Boxed,
+    );
+    render_timing(frame, rows[1], state, true, true, PanelChrome::Boxed);
+    render_earmarks(frame, rows[2], state, true, true, PanelChrome::Boxed);
+    render_pots(frame, rows[3], state, false, true, PanelChrome::Boxed);
 }
 
 fn render_editor_compact(
@@ -411,10 +582,24 @@ fn render_editor_compact(
         .unwrap_or(SectionId::Accounts);
     render_section_tabs(frame, rows[0], selected_section);
     match selected_section {
-        SectionId::Accounts => render_accounts(frame, rows[1], state, config, true, false),
-        SectionId::TimingAdjustments => render_timing(frame, rows[1], state, true, false),
-        SectionId::NextMonthEarmarks => render_earmarks(frame, rows[1], state, true, false),
-        SectionId::SavingsPots => render_pots(frame, rows[1], state, true, false),
+        SectionId::Accounts => render_accounts(
+            frame,
+            rows[1],
+            state,
+            config,
+            true,
+            false,
+            PanelChrome::Boxed,
+        ),
+        SectionId::TimingAdjustments => {
+            render_timing(frame, rows[1], state, true, false, PanelChrome::Boxed)
+        }
+        SectionId::NextMonthEarmarks => {
+            render_earmarks(frame, rows[1], state, true, false, PanelChrome::Boxed)
+        }
+        SectionId::SavingsPots => {
+            render_pots(frame, rows[1], state, true, false, PanelChrome::Boxed)
+        }
     }
 }
 
@@ -448,7 +633,7 @@ fn render_editor_footer(
     area: Rect,
     state: &EditorState,
     _config: &AppConfig,
-    _compact: bool,
+    profile: EditorLayoutProfile,
 ) {
     let lines = vec![
         Line::from(format!(
@@ -467,7 +652,14 @@ fn render_editor_footer(
     ];
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).title("Validation"))
+            .block(panel_block(
+                "Validation",
+                if profile == EditorLayoutProfile::Wide {
+                    PanelChrome::TopRule
+                } else {
+                    PanelChrome::Boxed
+                },
+            ))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -503,6 +695,7 @@ fn render_accounts(
     _config: &AppConfig,
     compact: bool,
     show_title: bool,
+    chrome: PanelChrome,
 ) {
     let rows = state.calculated.account_rows.iter().map(|row| {
         let field = FieldId::Account(row.id.clone());
@@ -552,6 +745,7 @@ fn render_accounts(
             state.calculated.totals.accounts_subtotal.format()
         ),
         section_focus_state(state, SectionId::Accounts),
+        chrome,
     ));
     frame.render_widget(table, area);
 }
@@ -562,6 +756,7 @@ fn render_timing(
     state: &EditorState,
     compact: bool,
     show_title: bool,
+    chrome: PanelChrome,
 ) {
     let correction = FieldId::PreviousMonthSpendingCorrection;
     let investment = FieldId::InvestmentNotYetSent;
@@ -616,6 +811,7 @@ fn render_timing(
             state.calculated.totals.timing_adjustments_subtotal.format()
         ),
         section_focus_state(state, SectionId::TimingAdjustments),
+        chrome,
     ));
     frame.render_widget(table, area);
 }
@@ -626,6 +822,7 @@ fn render_earmarks(
     state: &EditorState,
     compact: bool,
     show_title: bool,
+    chrome: PanelChrome,
 ) {
     let rows = state.calculated.earmark_rows.iter().map(|row| {
         let field = FieldId::Earmark(row.id.clone());
@@ -661,6 +858,7 @@ fn render_earmarks(
                 .format()
         ),
         section_focus_state(state, SectionId::NextMonthEarmarks),
+        chrome,
     ));
     frame.render_widget(table, area);
 }
@@ -671,6 +869,7 @@ fn render_pots(
     state: &EditorState,
     compact: bool,
     show_title: bool,
+    chrome: PanelChrome,
 ) {
     let mut rows = state
         .calculated
@@ -741,6 +940,7 @@ fn render_pots(
             state.calculated.totals.pots_final_total.format()
         ),
         section_focus_state(state, SectionId::SavingsPots),
+        chrome,
     ));
     frame.render_widget(table, area);
 }
@@ -905,9 +1105,27 @@ fn abbreviate_path(path: &Path, max_width: usize) -> String {
     format!("...{}", &text[text.len() - (max_width - 3)..])
 }
 
-fn section_block(title: Option<&str>, subtotal: String, focus: EditorFocusState) -> Block<'static> {
+fn panel_block(title: &str, chrome: PanelChrome) -> Block<'static> {
+    Block::default()
+        .borders(panel_borders(chrome))
+        .title(title.to_owned())
+}
+
+fn panel_borders(chrome: PanelChrome) -> Borders {
+    match chrome {
+        PanelChrome::Boxed => Borders::ALL,
+        PanelChrome::TopRule => Borders::TOP,
+    }
+}
+
+fn section_block(
+    title: Option<&str>,
+    subtotal: String,
+    focus: EditorFocusState,
+    chrome: PanelChrome,
+) -> Block<'static> {
     let mut block = Block::default()
-        .borders(Borders::ALL)
+        .borders(panel_borders(chrome))
         .border_style(section_emphasis_style(focus));
     if let Some(title) = title {
         block = block.title(
@@ -1030,6 +1248,31 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PanelChrome {
+    Boxed,
+    TopRule,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GuidedLayoutProfile {
+    Compact,
+    Standard,
+    Wide,
+}
+
+impl GuidedLayoutProfile {
+    fn for_area(area: Rect) -> Self {
+        if area.width >= 160 && area.height >= 32 {
+            Self::Wide
+        } else if area.width >= 100 && area.height >= 32 {
+            Self::Standard
+        } else {
+            Self::Compact
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1267,8 +1510,28 @@ mod tests {
         assert!(!rendered.contains("Draft autosaved and synced"));
         assert!(!rendered.contains("Subscriptions:"));
         assert!(!rendered.contains("Cash ISA:"));
-        assert!(rendered.contains("Next Month Earmarks £505.00"));
-        assert!(rendered.contains("Overall difference -£745.00"));
+        assert!(!rendered.contains("Type digits or decimals, then press Enter to autosave."));
+        assert!(!rendered.contains("Validation: outside tolerance"));
+        assert!(rendered.contains("Amount"));
+        assert!(rendered.contains("Next: General spending"));
+        assert!(rendered.contains("Earmarks £505.00  |  Diff -£745.00"));
+    }
+
+    #[test]
+    fn wide_layout_uses_lighter_chrome_for_guided_and_editor_views() {
+        let config = AppConfig::default_mvp();
+        let guided = buffer_to_string(draw_route(&guided_route(&config), Some(&config), 210, 48));
+        let editor = buffer_to_string(draw_route(&editor_route(&config), Some(&config), 210, 48));
+
+        assert!(guided.contains("Current Step"));
+        assert!(guided.contains("Live Preview"));
+        assert!(!guided.contains("┌Current Step"));
+        assert!(!guided.contains("┌Status"));
+
+        assert!(editor.contains("Accounts"));
+        assert!(editor.contains("Validation"));
+        assert!(!editor.contains("┌Accounts"));
+        assert!(!editor.contains("┌Validation"));
     }
 
     fn editor_route(config: &AppConfig) -> Route {

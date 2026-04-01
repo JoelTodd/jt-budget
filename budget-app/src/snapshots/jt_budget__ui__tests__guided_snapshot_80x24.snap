@@ -1,29 +1,28 @@
 ---
 source: budget-app/src/ui.rs
-assertion_line: 1098
 expression: "buffer_to_string(draw_route(&route, Some(&config), 80, 24))"
 ---
 ┌Guided Creation───────────────────────────────────────────────────────────────┐
 │May 2026  |  Step 13/14                                                       │
-│Type amount | Backspace delete | Enter save step | Esc months | q quit        │
+│Type amount | Enter save | Esc months | q quit                                │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌Current Step──────────────────────────────────────────────────────────────────┐
 │Subscriptions                                                                 │
 │                                                                              │
-│Type digits or decimals, then press Enter to autosave.                        │
+│Amount                                                                        │
+│£130.00                                                                       │
 │                                                                              │
-│Input: £130.00                                                                │
+│Enter saves this step.                                                        │
+│                                                                              │
+│Next: General spending                                                        │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-┌Live Preview──────────────────────────────────────────────────────────────────┐
-│Accounts £0.00 | Timing Adjustments £0.00 | Next Month Earmarks £505.00       │
-│Savings Pots £240.00 | Total allocated £745.00                                │
-│Overall difference -£745.00 | Status invalid                                  │
-│                                                                              │
-│                                                                              │
+┌Preview───────────────────────────────────────────────────────────────────────┐
+│Accounts £0.00  |  Pots £240.00                                               │
+│Earmarks £505.00  |  Diff -£745.00                                            │
+│Status invalid                                                                │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌Status────────────────────────────────────────────────────────────────────────┐
 │Persistence: clean  |  Sync: synced                                           │
-│Validation: outside tolerance  |  Difference: -£745.00                        │
 └──────────────────────────────────────────────────────────────────────────────┘
