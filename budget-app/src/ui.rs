@@ -126,14 +126,14 @@ fn selected_style() -> Style {
     Style::default()
         .bg(base00())
         .fg(base06())
-        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn editing_style() -> Style {
     Style::default()
         .bg(base00())
         .fg(tone_color(Tone::Warning))
-        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn section_tone(section: SectionId) -> Tone {
@@ -1882,6 +1882,7 @@ mod tests {
         let marker = &buffer[(marker_x, marker_y)];
         assert_eq!(marker.fg, Color::Rgb(0xee, 0xee, 0xec));
         assert_eq!(marker.bg, Color::Rgb(0x26, 0x26, 0x26));
+        assert!(!marker.modifier.contains(Modifier::UNDERLINED));
 
         let (title_x, title_y) = find_text(&buffer, "Savings Pots").unwrap();
         let title = &buffer[(title_x, title_y)];
@@ -1908,11 +1909,23 @@ mod tests {
         assert_eq!(value.fg, Color::Rgb(0xff, 0xc6, 0x6d));
         assert_eq!(value.bg, Color::Rgb(0x26, 0x26, 0x26));
         assert!(value.modifier.contains(Modifier::BOLD));
+        assert!(!value.modifier.contains(Modifier::UNDERLINED));
 
         let (title_x, title_y) = find_text(&buffer, "Savings Pots").unwrap();
         let title = &buffer[(title_x, title_y)];
         assert_eq!(title.fg, Color::Rgb(0xff, 0xc6, 0x6d));
         assert!(title.modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn navigation_selected_row_does_not_use_underlined_modifier() {
+        let config = AppConfig::default_mvp();
+        let buffer = draw_route(&navigation_route(&config), Some(&config), 105, 48);
+
+        let (month_x, month_y) = find_text(&buffer, "August 2026").unwrap();
+        let month = &buffer[(month_x, month_y)];
+        assert!(month.modifier.contains(Modifier::BOLD));
+        assert!(!month.modifier.contains(Modifier::UNDERLINED));
     }
 
     #[test]
