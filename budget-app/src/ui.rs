@@ -99,7 +99,7 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
     )
     .header(
         Row::new(vec![
-            Cell::from("Month"),
+            Cell::from(""),
             Cell::from("State"),
             Cell::from("Diff"),
             Cell::from("Updated"),
@@ -369,10 +369,10 @@ fn render_editor_wide(frame: &mut Frame<'_>, area: Rect, state: &EditorState, co
         ])
         .split(columns[0]);
 
-    render_accounts(frame, left[0], state, config, false, false);
-    render_timing(frame, left[1], state, false, false);
-    render_earmarks(frame, left[2], state, false, false);
-    render_pots(frame, columns[1], state, false, false);
+    render_accounts(frame, left[0], state, config, false, true);
+    render_timing(frame, left[1], state, false, true);
+    render_earmarks(frame, left[2], state, false, true);
+    render_pots(frame, columns[1], state, false, true);
 }
 
 fn render_editor_standard(
@@ -390,10 +390,10 @@ fn render_editor_standard(
             Constraint::Min(section_height(state.calculated.pot_rows.len() + 2, false)),
         ])
         .split(area);
-    render_accounts(frame, rows[0], state, config, false, false);
-    render_timing(frame, rows[1], state, true, false);
-    render_earmarks(frame, rows[2], state, true, false);
-    render_pots(frame, rows[3], state, false, false);
+    render_accounts(frame, rows[0], state, config, false, true);
+    render_timing(frame, rows[1], state, true, true);
+    render_earmarks(frame, rows[2], state, true, true);
+    render_pots(frame, rows[3], state, false, true);
 }
 
 fn render_editor_compact(
@@ -539,7 +539,7 @@ fn render_accounts(
     )
     .header(
         Row::new(vec![
-            Cell::from("Account"),
+            Cell::from(if show_title { "" } else { "Account" }),
             Cell::from(""),
             Cell::from("Entered"),
             Cell::from("Net"),
@@ -599,7 +599,7 @@ fn render_timing(
     )
     .header(
         Row::new(vec![
-            Cell::from("Adjustment"),
+            Cell::from(if show_title { "" } else { "Adjustment" }),
             Cell::from("Entered"),
             Cell::from("Effect"),
         ])
@@ -640,8 +640,11 @@ fn render_earmarks(
         ],
     )
     .header(
-        Row::new(vec![Cell::from("Earmark"), Cell::from("Amount")])
-            .style(Style::default().add_modifier(Modifier::BOLD)),
+        Row::new(vec![
+            Cell::from(if show_title { "" } else { "Earmark" }),
+            Cell::from("Amount"),
+        ])
+        .style(Style::default().add_modifier(Modifier::BOLD)),
     )
     .block(section_block(
         show_title.then_some("Next Month Earmarks"),
@@ -715,7 +718,7 @@ fn render_pots(
     )
     .header(
         Row::new(vec![
-            Cell::from("Pot"),
+            Cell::from(if show_title { "" } else { "Pot" }),
             Cell::from("Carried"),
             Cell::from("Change"),
             Cell::from("Final"),
@@ -1026,6 +1029,7 @@ mod tests {
         assert!(rendered.contains("Overall difference"));
         assert!(rendered.contains("Status invalid"));
         assert!(!rendered.contains("Months"));
+        assert!(!rendered.contains("│Month"));
     }
 
     #[test]
@@ -1070,16 +1074,20 @@ mod tests {
     }
 
     #[test]
-    fn editor_large_layout_omits_redundant_section_titles() {
+    fn editor_large_layout_keeps_section_titles_and_omits_titular_column_headers() {
         let config = AppConfig::default_mvp();
         let route = editor_route(&config);
 
         for (width, height) in [(105, 48), (210, 48)] {
             let rendered = buffer_to_string(draw_route(&route, Some(&config), width, height));
-            assert!(!rendered.contains("Accounts"));
-            assert!(!rendered.contains("Timing Adjustments"));
-            assert!(!rendered.contains("Next Month Earmarks"));
-            assert!(!rendered.contains("Savings Pots"));
+            assert!(rendered.contains("Accounts"));
+            assert!(rendered.contains("Timing Adjustments"));
+            assert!(rendered.contains("Next Month Earmarks"));
+            assert!(rendered.contains("Savings Pots"));
+            assert!(!rendered.contains("│Account"));
+            assert!(!rendered.contains("│Adjustment"));
+            assert!(!rendered.contains("│Earmark"));
+            assert!(!rendered.contains("│Pot"));
         }
     }
 
