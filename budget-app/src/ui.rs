@@ -10,7 +10,201 @@ use crate::state::{
     NavigationDialog, NavigationState, PersistenceState, Route, SectionId, SyncState,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tone {
+    Navigation,
+    Guided,
+    Summary,
+    Status,
+    Liability,
+    Accounts,
+    Timing,
+    Earmarks,
+    Pots,
+    Danger,
+    Success,
+    Warning,
+}
+
+type RgbTriplet = (u8, u8, u8);
+
+const BASE00_RGB: RgbTriplet = (0x26, 0x26, 0x26);
+const BASE03_RGB: RgbTriplet = (0x79, 0x79, 0x79);
+const BASE04_RGB: RgbTriplet = (0xa0, 0xa0, 0x9f);
+const BASE05_RGB: RgbTriplet = (0xc7, 0xc7, 0xc5);
+const BASE06_RGB: RgbTriplet = (0xee, 0xee, 0xec);
+const BASE08_RGB: RgbTriplet = (0xd2, 0x51, 0x51);
+const BASE09_RGB: RgbTriplet = (0xff, 0xc6, 0x6d);
+const BASE0A_RGB: RgbTriplet = (0x8a, 0xb7, 0xd9);
+const BASE0B_RGB: RgbTriplet = (0xa5, 0xc2, 0x61);
+const BASE0C_RGB: RgbTriplet = (0xbe, 0xd6, 0xff);
+const BASE0D_RGB: RgbTriplet = (0x6c, 0x99, 0xbb);
+const BASE0E_RGB: RgbTriplet = (0xd1, 0x97, 0xd9);
+
+fn rgb(color: RgbTriplet) -> Color {
+    Color::Rgb(color.0, color.1, color.2)
+}
+
+fn base00() -> Color {
+    rgb(BASE00_RGB)
+}
+
+fn base03() -> Color {
+    rgb(BASE03_RGB)
+}
+
+fn base04() -> Color {
+    rgb(BASE04_RGB)
+}
+
+fn base05() -> Color {
+    rgb(BASE05_RGB)
+}
+
+fn base06() -> Color {
+    rgb(BASE06_RGB)
+}
+
+fn tone_rgb(tone: Tone) -> RgbTriplet {
+    match tone {
+        Tone::Navigation => BASE0D_RGB,
+        Tone::Guided => BASE0A_RGB,
+        Tone::Summary => BASE0C_RGB,
+        Tone::Status => BASE0A_RGB,
+        Tone::Liability => BASE0E_RGB,
+        Tone::Accounts => BASE0D_RGB,
+        Tone::Timing => BASE09_RGB,
+        Tone::Earmarks => BASE0E_RGB,
+        Tone::Pots => BASE0B_RGB,
+        Tone::Danger => BASE08_RGB,
+        Tone::Success => BASE0B_RGB,
+        Tone::Warning => BASE09_RGB,
+    }
+}
+
+fn tone_color(tone: Tone) -> Color {
+    rgb(tone_rgb(tone))
+}
+
+fn panel_surface_color(_tone: Tone) -> Color {
+    rgb(BASE00_RGB)
+}
+
+fn app_style() -> Style {
+    Style::default().bg(base00()).fg(base05())
+}
+
+fn toned_panel_style(tone: Tone) -> Style {
+    Style::default().bg(panel_surface_color(tone)).fg(base05())
+}
+
+fn muted_style() -> Style {
+    Style::default().fg(base04())
+}
+
+fn subtle_style() -> Style {
+    Style::default().fg(base03())
+}
+
+fn bright_style() -> Style {
+    Style::default().fg(base06())
+}
+
+fn tone_style(tone: Tone) -> Style {
+    Style::default().fg(tone_color(tone))
+}
+
+fn emphasized_tone_style(tone: Tone) -> Style {
+    tone_style(tone).add_modifier(Modifier::BOLD)
+}
+
+fn panel_border_style(tone: Tone) -> Style {
+    tone_style(tone)
+}
+
+fn selected_style() -> Style {
+    Style::default()
+        .bg(base00())
+        .fg(base06())
+        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+}
+
+fn editing_style() -> Style {
+    Style::default()
+        .bg(base00())
+        .fg(tone_color(Tone::Warning))
+        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+}
+
+fn section_tone(section: SectionId) -> Tone {
+    match section {
+        SectionId::Accounts => Tone::Accounts,
+        SectionId::TimingAdjustments => Tone::Timing,
+        SectionId::NextMonthEarmarks => Tone::Earmarks,
+        SectionId::SavingsPots => Tone::Pots,
+    }
+}
+
+fn validation_tone(is_valid: bool) -> Tone {
+    if is_valid {
+        Tone::Success
+    } else {
+        Tone::Danger
+    }
+}
+
+fn metric_spans(label: &str, value: String, tone: Tone) -> Vec<Span<'static>> {
+    vec![
+        Span::styled(format!("{label} "), muted_style()),
+        Span::styled(value, emphasized_tone_style(tone)),
+    ]
+}
+
+fn status_value_style(label: &str) -> Style {
+    match label {
+        "clean" | "synced" | "valid" | "within tolerance" => emphasized_tone_style(Tone::Success),
+        "dirty" | "pending" => emphasized_tone_style(Tone::Warning),
+        "autosaving" | "syncing" => emphasized_tone_style(Tone::Status),
+        "failed" | "invalid" | "outside tolerance" => emphasized_tone_style(Tone::Danger),
+        _ => bright_style(),
+    }
+}
+
+fn operational_status_style(label: &str) -> Style {
+    match label {
+        "clean" | "synced" => tone_style(Tone::Status),
+        "dirty" | "pending" => tone_style(Tone::Warning),
+        "autosaving" | "syncing" => emphasized_tone_style(Tone::Status),
+        "failed" => emphasized_tone_style(Tone::Danger),
+        _ => muted_style(),
+    }
+}
+
+fn month_state_style(is_valid: bool) -> Style {
+    if is_valid {
+        tone_style(Tone::Success)
+    } else {
+        tone_style(Tone::Warning)
+    }
+}
+
+fn key_hint_spans(hint: &str) -> Vec<Span<'static>> {
+    if let Some((key, action)) = hint.split_once(' ') {
+        vec![
+            Span::styled(key.to_owned(), emphasized_tone_style(Tone::Guided)),
+            Span::raw(" "),
+            Span::styled(action.to_owned(), muted_style()),
+        ]
+    } else {
+        vec![Span::styled(
+            hint.to_owned(),
+            emphasized_tone_style(Tone::Guided),
+        )]
+    }
+}
+
 pub fn render(frame: &mut Frame<'_>, route: &Route, repo_root: &Path, config: Option<&AppConfig>) {
+    frame.render_widget(Block::default().style(app_style()), frame.area());
     match route {
         Route::Navigation(state) => render_navigation(frame, state, repo_root),
         Route::GuidedCreation(state) => {
@@ -30,10 +224,13 @@ pub fn render(frame: &mut Frame<'_>, route: &Route, repo_root: &Path, config: Op
 
 fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: &Path) {
     let compact = frame.area().width < 110 || frame.area().height < 28;
-    let mut header_lines = vec![Line::from(format!(
-        "Repo: {}",
-        abbreviate_path(repo_root, frame.area().width.saturating_sub(8) as usize)
-    ))];
+    let mut header_lines = vec![Line::from(vec![
+        Span::styled("Repo: ", muted_style()),
+        Span::styled(
+            abbreviate_path(repo_root, frame.area().width.saturating_sub(8) as usize),
+            bright_style(),
+        ),
+    ])];
     header_lines.extend(hint_lines(
         frame.area().width,
         if compact {
@@ -58,7 +255,12 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
         .split(frame.area());
 
     let header = Paragraph::new(header_lines)
-        .block(Block::default().borders(Borders::ALL).title("Navigation"));
+        .style(toned_panel_style(Tone::Navigation))
+        .block(panel_block(
+            "Navigation",
+            PanelChrome::Boxed,
+            Tone::Navigation,
+        ));
     frame.render_widget(header, layout[0]);
 
     let body = if compact {
@@ -80,11 +282,21 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
             "draft"
         };
         Row::new(vec![
-            Cell::from(entry.document.month.display_label()),
-            Cell::from(status.to_owned()),
-            amount_cell(entry.calculated.validation.overall_difference.format()),
-            Cell::from(format_updated_timestamp(
-                entry.document.meta.updated_at.as_deref(),
+            Cell::from(Span::styled(
+                entry.document.month.display_label(),
+                bright_style(),
+            )),
+            Cell::from(Span::styled(
+                status.to_owned(),
+                month_state_style(entry.calculated.validation.is_valid),
+            )),
+            amount_cell_with_style(
+                entry.calculated.validation.overall_difference.format(),
+                emphasized_tone_style(validation_tone(entry.calculated.validation.is_valid)),
+            ),
+            Cell::from(Span::styled(
+                format_updated_timestamp(entry.document.meta.updated_at.as_deref()),
+                muted_style(),
             )),
         ])
     });
@@ -104,10 +316,16 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
             Cell::from("Diff"),
             Cell::from("Updated"),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD)),
+        .style(emphasized_tone_style(Tone::Navigation)),
     )
-    .block(Block::default().borders(Borders::ALL))
-    .row_highlight_style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    .style(toned_panel_style(Tone::Navigation))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .style(toned_panel_style(Tone::Navigation))
+            .border_style(panel_border_style(Tone::Navigation)),
+    )
+    .row_highlight_style(selected_style());
     let mut table_state = TableState::default();
     if !state.months.is_empty() {
         table_state.select(Some(state.selected));
@@ -120,7 +338,8 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
         Text::from("No months yet.\nPress `n` to create the first month.")
     };
     let summary = Paragraph::new(summary_text)
-        .block(Block::default().borders(Borders::ALL).title("Summary"))
+        .style(toned_panel_style(Tone::Summary))
+        .block(panel_block("Summary", PanelChrome::Boxed, Tone::Summary))
         .wrap(Wrap { trim: false });
     frame.render_widget(summary, body[1]);
 
@@ -138,6 +357,7 @@ fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog) {
                 frame,
                 area,
                 "New Month",
+                Tone::Navigation,
                 &[
                     "Create month".to_owned(),
                     "".to_owned(),
@@ -156,6 +376,7 @@ fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog) {
                 frame,
                 area,
                 "Rename Month",
+                Tone::Navigation,
                 &[
                     format!("Rename {}", dialog.source.display_label()),
                     "".to_owned(),
@@ -180,6 +401,7 @@ fn render_delete_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DeleteDialog
         frame,
         area,
         "Delete Month",
+        Tone::Danger,
         &[
             format!("Delete {}?", dialog.month.display_label()),
             "".to_owned(),
@@ -194,11 +416,12 @@ fn render_delete_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DeleteDialog
     );
 }
 
-fn render_dialog(frame: &mut Frame<'_>, area: Rect, title: &str, lines: &[String]) {
+fn render_dialog(frame: &mut Frame<'_>, area: Rect, title: &str, tone: Tone, lines: &[String]) {
     let text = Text::from(lines.iter().cloned().map(Line::from).collect::<Vec<_>>());
     frame.render_widget(
         Paragraph::new(text)
-            .block(Block::default().borders(Borders::ALL).title(title))
+            .style(toned_panel_style(tone))
+            .block(panel_block(title, PanelChrome::Boxed, tone))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -206,12 +429,13 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, title: &str, lines: &[String
 
 fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, config: &AppConfig) {
     let profile = GuidedLayoutProfile::for_area(frame.area());
-    let mut header_lines = vec![Line::from(format!(
-        "{}  |  Step {}/{}",
-        state.document.month.display_label(),
-        state.step_index + 1,
-        state.steps.len()
-    ))];
+    let mut header_lines = vec![Line::from(vec![
+        Span::styled(state.document.month.display_label(), bright_style()),
+        Span::styled(
+            format!("  |  Step {}/{}", state.step_index + 1, state.steps.len()),
+            muted_style(),
+        ),
+    ])];
     header_lines.extend(hint_lines(
         frame.area().width,
         match profile {
@@ -238,13 +462,23 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
         ])
         .split(frame.area());
 
-    let header =
-        Paragraph::new(header_lines).block(panel_block("Guided Creation", PanelChrome::Boxed));
+    let header = Paragraph::new(header_lines)
+        .style(toned_panel_style(Tone::Guided))
+        .block(panel_block(
+            "Guided Creation",
+            PanelChrome::Boxed,
+            Tone::Guided,
+        ));
     frame.render_widget(header, layout[0]);
 
     let current_step = &state.steps[state.step_index];
     let step_widget = Paragraph::new(guided_step_text(state, config, current_step, profile))
-        .block(panel_block("Current Step", guided_panel_chrome(profile)))
+        .style(toned_panel_style(Tone::Guided))
+        .block(panel_block(
+            "Current Step",
+            guided_panel_chrome(profile),
+            Tone::Guided,
+        ))
         .wrap(Wrap { trim: false });
 
     match profile {
@@ -256,7 +490,8 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
             frame.render_widget(step_widget, body[0]);
             frame.render_widget(
                 Paragraph::new(guided_preview_text(state, body[1].width, profile))
-                    .block(panel_block("Preview", PanelChrome::Boxed))
+                    .style(toned_panel_style(Tone::Summary))
+                    .block(panel_block("Preview", PanelChrome::Boxed, Tone::Summary))
                     .wrap(Wrap { trim: false }),
                 body[1],
             );
@@ -269,7 +504,12 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
             frame.render_widget(step_widget, body[0]);
             frame.render_widget(
                 Paragraph::new(guided_preview_text(state, body[1].width, profile))
-                    .block(panel_block("Live Preview", PanelChrome::Boxed))
+                    .style(toned_panel_style(Tone::Summary))
+                    .block(panel_block(
+                        "Live Preview",
+                        PanelChrome::Boxed,
+                        Tone::Summary,
+                    ))
                     .wrap(Wrap { trim: false }),
                 body[1],
             );
@@ -286,7 +526,12 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
             frame.render_widget(step_widget, body[0]);
             frame.render_widget(
                 Paragraph::new(guided_preview_text(state, body[2].width, profile))
-                    .block(panel_block("Live Preview", PanelChrome::TopRule))
+                    .style(toned_panel_style(Tone::Summary))
+                    .block(panel_block(
+                        "Live Preview",
+                        PanelChrome::TopRule,
+                        Tone::Summary,
+                    ))
                     .wrap(Wrap { trim: false }),
                 body[2],
             );
@@ -295,7 +540,12 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
 
     frame.render_widget(
         Paragraph::new(guided_status_lines(state, profile))
-            .block(panel_block("Status", guided_panel_chrome(profile)))
+            .style(toned_panel_style(Tone::Status))
+            .block(panel_block(
+                "Status",
+                guided_panel_chrome(profile),
+                Tone::Status,
+            ))
             .wrap(Wrap { trim: false }),
         layout[2],
     );
@@ -310,19 +560,23 @@ fn guided_step_text(
     match profile {
         GuidedLayoutProfile::Compact => {
             let mut lines = vec![
-                Line::from(current_step.label(config)),
-                Line::from(""),
                 Line::from(Span::styled(
-                    "Amount",
-                    Style::default().add_modifier(Modifier::BOLD),
+                    current_step.label(config),
+                    emphasized_tone_style(Tone::Guided),
                 )),
+                Line::from(""),
+                Line::from(Span::styled("Amount", emphasized_tone_style(Tone::Guided))),
                 Line::from(Span::styled(
                     format!(
                         "{}{}",
                         state.input.display_text(),
                         if state.input.is_edited() { "_" } else { "" }
                     ),
-                    Style::default().add_modifier(Modifier::BOLD),
+                    if state.input.is_edited() {
+                        editing_style()
+                    } else {
+                        selected_style()
+                    },
                 )),
             ];
             if let Some(message) = state
@@ -331,26 +585,53 @@ fn guided_step_text(
                 .filter(|message| !is_guided_status_message(message))
             {
                 lines.push(Line::from(""));
-                lines.push(Line::from(message.to_owned()));
+                lines.push(Line::from(Span::styled(message.to_owned(), bright_style())));
             } else {
                 lines.push(Line::from(""));
-                lines.push(Line::from("Enter saves this step."));
+                lines.push(Line::from(Span::styled(
+                    "Enter saves this step.",
+                    muted_style(),
+                )));
             }
             lines.push(Line::from(""));
-            lines.push(Line::from(guided_next_step_line(state, config)));
+            let next_step = guided_next_step_line(state, config);
+            let (prefix, remainder) = next_step
+                .split_once(": ")
+                .map(|(prefix, remainder)| (format!("{prefix}: "), remainder.to_owned()))
+                .unwrap_or_else(|| ("".to_owned(), next_step));
+            lines.push(Line::from(vec![
+                Span::styled(prefix, muted_style()),
+                Span::styled(remainder, emphasized_tone_style(Tone::Summary)),
+            ]));
             Text::from(lines)
         }
         GuidedLayoutProfile::Standard | GuidedLayoutProfile::Wide => {
             let mut lines = vec![
-                Line::from(current_step.label(config)),
-                Line::from(""),
-                Line::from("Type digits or decimals, then press Enter to autosave."),
-                Line::from(""),
-                Line::from(format!(
-                    "Input: {}{}",
-                    state.input.display_text(),
-                    if state.input.is_edited() { "_" } else { "" }
+                Line::from(Span::styled(
+                    current_step.label(config),
+                    emphasized_tone_style(Tone::Guided),
                 )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Type digits or decimals, then press Enter to autosave.",
+                    muted_style(),
+                )),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Input: ", muted_style()),
+                    Span::styled(
+                        format!(
+                            "{}{}",
+                            state.input.display_text(),
+                            if state.input.is_edited() { "_" } else { "" }
+                        ),
+                        if state.input.is_edited() {
+                            editing_style()
+                        } else {
+                            selected_style()
+                        },
+                    ),
+                ]),
             ];
             if let Some(message) = state
                 .message
@@ -358,10 +639,10 @@ fn guided_step_text(
                 .filter(|message| !is_guided_status_message(message))
             {
                 lines.push(Line::from(""));
-                lines.push(Line::from(message.to_owned()));
+                lines.push(Line::from(Span::styled(message.to_owned(), bright_style())));
             }
             lines.push(Line::from(""));
-            lines.push(Line::from("Next steps:"));
+            lines.push(Line::from(Span::styled("Next steps:", muted_style())));
             for step in state.steps.iter().skip(state.step_index + 1).take(
                 if profile == GuidedLayoutProfile::Wide {
                     6
@@ -369,7 +650,10 @@ fn guided_step_text(
                     5
                 },
             ) {
-                lines.push(Line::from(format!("• {}", step.label(config))));
+                lines.push(Line::from(vec![
+                    Span::styled("• ", subtle_style()),
+                    Span::styled(step.label(config), tone_style(Tone::Summary)),
+                ]));
             }
             Text::from(lines)
         }
@@ -391,28 +675,53 @@ fn guided_preview_text(
 ) -> Text<'static> {
     match profile {
         GuidedLayoutProfile::Compact => Text::from(vec![
-            Line::from(format!(
-                "Accounts {}  |  Pots {}",
-                state.calculated.totals.accounts_subtotal.format(),
-                state.calculated.totals.pots_final_total.format()
-            )),
-            Line::from(format!(
-                "Earmarks {}  |  Diff {}",
-                state
-                    .calculated
-                    .totals
-                    .next_month_earmarks_subtotal
-                    .format(),
-                state.calculated.validation.overall_difference.format()
-            )),
-            Line::from(format!(
-                "Status {}",
-                if state.calculated.validation.is_valid {
-                    "valid"
-                } else {
-                    "invalid"
-                }
-            )),
+            Line::from({
+                let mut spans = metric_spans(
+                    "Accounts",
+                    state.calculated.totals.accounts_subtotal.format(),
+                    Tone::Accounts,
+                );
+                spans.push(Span::styled("  |  ", subtle_style()));
+                spans.extend(metric_spans(
+                    "Pots",
+                    state.calculated.totals.pots_final_total.format(),
+                    Tone::Pots,
+                ));
+                spans
+            }),
+            Line::from({
+                let mut spans = metric_spans(
+                    "Earmarks",
+                    state
+                        .calculated
+                        .totals
+                        .next_month_earmarks_subtotal
+                        .format(),
+                    Tone::Earmarks,
+                );
+                spans.push(Span::styled("  |  ", subtle_style()));
+                spans.extend(metric_spans(
+                    "Diff",
+                    state.calculated.validation.overall_difference.format(),
+                    validation_tone(state.calculated.validation.is_valid),
+                ));
+                spans
+            }),
+            Line::from(vec![
+                Span::styled("Status ", muted_style()),
+                Span::styled(
+                    if state.calculated.validation.is_valid {
+                        "valid"
+                    } else {
+                        "invalid"
+                    },
+                    status_value_style(if state.calculated.validation.is_valid {
+                        "valid"
+                    } else {
+                        "invalid"
+                    }),
+                ),
+            ]),
         ]),
         GuidedLayoutProfile::Standard | GuidedLayoutProfile::Wide => {
             compact_summary_text(&state.calculated, width)
@@ -425,33 +734,54 @@ fn guided_status_lines(
     profile: GuidedLayoutProfile,
 ) -> Vec<Line<'static>> {
     match profile {
-        GuidedLayoutProfile::Compact => {
-            vec![Line::from(status_line(state.persistence, state.sync))]
-        }
+        GuidedLayoutProfile::Compact => vec![status_line(state.persistence, state.sync)],
         GuidedLayoutProfile::Standard => vec![
-            Line::from(status_line(state.persistence, state.sync)),
-            Line::from(format!(
-                "Validation: {}  |  Difference: {}",
-                if state.calculated.validation.is_valid {
+            Line::from({
+                let validation = if state.calculated.validation.is_valid {
                     "within tolerance"
                 } else {
                     "outside tolerance"
-                },
-                state.calculated.validation.overall_difference.format()
+                };
+                let spans = vec![
+                    Span::styled("Validation: ", muted_style()),
+                    Span::styled(validation, status_value_style(validation)),
+                    Span::styled("  |  Difference: ", subtle_style()),
+                    Span::styled(
+                        state.calculated.validation.overall_difference.format(),
+                        emphasized_tone_style(validation_tone(
+                            state.calculated.validation.is_valid,
+                        )),
+                    ),
+                ];
+                spans
+            }),
+            status_line(state.persistence, state.sync),
+            Line::from(Span::styled(
+                "The draft is saved as you confirm each guided step.",
+                muted_style(),
             )),
-            Line::from("The draft is saved as you confirm each guided step."),
         ],
         GuidedLayoutProfile::Wide => vec![
-            Line::from(status_line(state.persistence, state.sync)),
-            Line::from(format!(
-                "Validation: {}  |  Difference: {}",
-                if state.calculated.validation.is_valid {
+            Line::from({
+                let validation = if state.calculated.validation.is_valid {
                     "within tolerance"
                 } else {
                     "outside tolerance"
-                },
-                state.calculated.validation.overall_difference.format()
-            )),
+                };
+                let spans = vec![
+                    Span::styled("Validation: ", muted_style()),
+                    Span::styled(validation, status_value_style(validation)),
+                    Span::styled("  |  Difference: ", subtle_style()),
+                    Span::styled(
+                        state.calculated.validation.overall_difference.format(),
+                        emphasized_tone_style(validation_tone(
+                            state.calculated.validation.is_valid,
+                        )),
+                    ),
+                ];
+                spans
+            }),
+            status_line(state.persistence, state.sync),
         ],
     }
 }
@@ -465,7 +795,10 @@ fn guided_panel_chrome(profile: GuidedLayoutProfile) -> PanelChrome {
 
 fn render_editor(frame: &mut Frame<'_>, state: &EditorState, config: &AppConfig) {
     let profile = EditorLayoutProfile::for_area(frame.area());
-    let mut header_lines = vec![Line::from(state.document.month.display_label())];
+    let mut header_lines = vec![Line::from(Span::styled(
+        state.document.month.display_label(),
+        bright_style(),
+    ))];
     header_lines.extend(hint_lines(
         frame.area().width,
         if profile == EditorLayoutProfile::Compact {
@@ -488,11 +821,12 @@ fn render_editor(frame: &mut Frame<'_>, state: &EditorState, config: &AppConfig)
         ])
         .split(frame.area());
 
-    let header = Paragraph::new(header_lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Monthly Sheet"),
-    );
+    let header = Paragraph::new(header_lines).block(panel_block(
+        "Monthly Sheet",
+        PanelChrome::Boxed,
+        Tone::Navigation,
+    ));
+    let header = header.style(toned_panel_style(Tone::Navigation));
     frame.render_widget(header, layout[0]);
 
     match profile {
@@ -607,23 +941,25 @@ fn render_section_tabs(frame: &mut Frame<'_>, area: Rect, selected: SectionId) {
     let mut spans = Vec::new();
     for section in SectionId::ALL {
         if !spans.is_empty() {
-            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(" | ", subtle_style()));
         }
         spans.push(Span::styled(
             section.compact_title(),
             if section == selected {
-                Style::default()
-                    .fg(Color::White)
-                    .bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD)
+                selected_style()
             } else {
-                Style::default()
+                emphasized_tone_style(section_tone(section))
             },
         ));
     }
     frame.render_widget(
         Paragraph::new(Line::from(spans))
-            .block(Block::default().borders(Borders::ALL).title("Sections")),
+            .style(toned_panel_style(Tone::Navigation))
+            .block(panel_block(
+                "Sections",
+                PanelChrome::Boxed,
+                Tone::Navigation,
+            )),
         area,
     );
 }
@@ -636,28 +972,46 @@ fn render_editor_footer(
     profile: EditorLayoutProfile,
 ) {
     let lines = vec![
-        Line::from(format!(
-            "Overall difference: {}",
-            state.calculated.validation.overall_difference.format()
-        )),
-        Line::from(format!(
-            "Status: {}  |  {}",
-            if state.calculated.validation.is_valid {
-                "valid"
-            } else {
-                "invalid"
-            },
-            status_line(state.persistence, state.sync)
-        )),
+        Line::from(vec![
+            Span::styled("Budget: ", muted_style()),
+            Span::styled(
+                if state.calculated.validation.is_valid {
+                    "within tolerance"
+                } else {
+                    "outside tolerance"
+                },
+                status_value_style(if state.calculated.validation.is_valid {
+                    "within tolerance"
+                } else {
+                    "outside tolerance"
+                }),
+            ),
+            Span::styled("  |  Difference: ", subtle_style()),
+            Span::styled(
+                state.calculated.validation.overall_difference.format(),
+                emphasized_tone_style(validation_tone(state.calculated.validation.is_valid)),
+            ),
+        ]),
+        status_line(state.persistence, state.sync),
     ];
     frame.render_widget(
         Paragraph::new(lines)
+            .style(if state.calculated.validation.is_valid {
+                toned_panel_style(Tone::Success)
+            } else {
+                toned_panel_style(Tone::Danger)
+            })
             .block(panel_block(
                 "Validation",
                 if profile == EditorLayoutProfile::Wide {
                     PanelChrome::TopRule
                 } else {
                     PanelChrome::Boxed
+                },
+                if state.calculated.validation.is_valid {
+                    Tone::Success
+                } else {
+                    Tone::Danger
                 },
             ))
             .wrap(Wrap { trim: false }),
@@ -669,20 +1023,24 @@ fn render_failure(frame: &mut Frame<'_>, state: &FailureState) {
     let area = centered_rect(70, 40, frame.area());
     frame.render_widget(Clear, area);
     let lines = vec![
-        Line::from(state.title.clone()),
+        Line::from(Span::styled(
+            state.title.clone(),
+            emphasized_tone_style(Tone::Danger),
+        )),
         Line::from(""),
-        Line::from(state.message.clone()),
+        Line::from(Span::styled(state.message.clone(), bright_style())),
         Line::from(""),
-        Line::from("r retry"),
-        Line::from("q quit"),
+        Line::from(key_hint_spans("r retry")),
+        Line::from(key_hint_spans("q quit")),
     ];
     frame.render_widget(
         Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Blocking Failure"),
-            )
+            .style(toned_panel_style(Tone::Danger))
+            .block(panel_block(
+                "Blocking Failure",
+                PanelChrome::Boxed,
+                Tone::Danger,
+            ))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -702,12 +1060,28 @@ fn render_accounts(
         let focus = field_focus_state(state, &field);
         Row::new(vec![
             labeled_row_cell(&row.label, focus),
-            Cell::from(match row.kind {
-                AccountKind::Asset => "+",
-                AccountKind::Liability => "-",
-            }),
-            styled_value_cell(value_for_field(state, &field, &state.document), focus),
-            amount_cell(row.normalised_balance.format()),
+            Cell::from(Span::styled(
+                match row.kind {
+                    AccountKind::Asset => "+",
+                    AccountKind::Liability => "-",
+                },
+                emphasized_tone_style(match row.kind {
+                    AccountKind::Asset => Tone::Success,
+                    AccountKind::Liability => Tone::Liability,
+                }),
+            )),
+            styled_value_cell_with_tone(
+                value_for_field(state, &field, &state.document),
+                focus,
+                Tone::Accounts,
+            ),
+            amount_cell_with_style(
+                row.normalised_balance.format(),
+                emphasized_tone_style(match row.kind {
+                    AccountKind::Asset => Tone::Accounts,
+                    AccountKind::Liability => Tone::Liability,
+                }),
+            ),
         ])
         .style(focused_row_style(focus))
     });
@@ -736,8 +1110,9 @@ fn render_accounts(
             Cell::from("Entered"),
             Cell::from("Net"),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD)),
+        .style(emphasized_tone_style(Tone::Accounts)),
     )
+    .style(toned_panel_style(Tone::Accounts))
     .block(section_block(
         show_title.then_some("Accounts"),
         format!(
@@ -745,6 +1120,7 @@ fn render_accounts(
             state.calculated.totals.accounts_subtotal.format()
         ),
         section_focus_state(state, SectionId::Accounts),
+        Tone::Accounts,
         chrome,
     ));
     frame.render_widget(table, area);
@@ -765,26 +1141,32 @@ fn render_timing(
     let rows = vec![
         Row::new(vec![
             labeled_row_cell("General spending over/under", correction_focus),
-            styled_value_cell(
+            styled_value_cell_with_tone(
                 value_for_field(state, &correction, &state.document),
                 correction_focus,
+                Tone::Timing,
             ),
-            amount_cell(
+            amount_cell_with_style(
                 state
                     .calculated
                     .timing
                     .previous_month_spending_correction_effect
                     .format(),
+                emphasized_tone_style(Tone::Timing),
             ),
         ])
         .style(focused_row_style(correction_focus)),
         Row::new(vec![
             labeled_row_cell("Investment not yet sent", investment_focus),
-            styled_value_cell(
+            styled_value_cell_with_tone(
                 value_for_field(state, &investment, &state.document),
                 investment_focus,
+                Tone::Timing,
             ),
-            amount_cell(state.calculated.timing.investment_effect.format()),
+            amount_cell_with_style(
+                state.calculated.timing.investment_effect.format(),
+                emphasized_tone_style(Tone::Timing),
+            ),
         ])
         .style(focused_row_style(investment_focus)),
     ];
@@ -802,8 +1184,9 @@ fn render_timing(
             Cell::from("Entered"),
             Cell::from("Effect"),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD)),
+        .style(emphasized_tone_style(Tone::Timing)),
     )
+    .style(toned_panel_style(Tone::Timing))
     .block(section_block(
         show_title.then_some("Timing Adjustments"),
         format!(
@@ -811,6 +1194,7 @@ fn render_timing(
             state.calculated.totals.timing_adjustments_subtotal.format()
         ),
         section_focus_state(state, SectionId::TimingAdjustments),
+        Tone::Timing,
         chrome,
     ));
     frame.render_widget(table, area);
@@ -829,7 +1213,11 @@ fn render_earmarks(
         let focus = field_focus_state(state, &field);
         Row::new(vec![
             labeled_row_cell(&row.label, focus),
-            styled_value_cell(value_for_field(state, &field, &state.document), focus),
+            styled_value_cell_with_tone(
+                value_for_field(state, &field, &state.document),
+                focus,
+                Tone::Earmarks,
+            ),
         ])
         .style(focused_row_style(focus))
     });
@@ -845,8 +1233,9 @@ fn render_earmarks(
             Cell::from(if show_title { "" } else { "Earmark" }),
             Cell::from("Amount"),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD)),
+        .style(emphasized_tone_style(Tone::Earmarks)),
     )
+    .style(toned_panel_style(Tone::Earmarks))
     .block(section_block(
         show_title.then_some("Next Month Earmarks"),
         format!(
@@ -858,6 +1247,7 @@ fn render_earmarks(
                 .format()
         ),
         section_focus_state(state, SectionId::NextMonthEarmarks),
+        Tone::Earmarks,
         chrome,
     ));
     frame.render_widget(table, area);
@@ -883,27 +1273,41 @@ fn render_pots(
             let row_focus = combined_focus_state(carried_focus, change_focus);
             Row::new(vec![
                 labeled_row_cell(&row.label, row_focus),
-                styled_value_cell(
+                styled_value_cell_with_tone(
                     value_for_field(state, &carried, &state.document),
                     carried_focus,
+                    Tone::Pots,
                 ),
-                styled_value_cell(
+                styled_value_cell_with_tone(
                     value_for_field(state, &change, &state.document),
                     change_focus,
+                    Tone::Pots,
                 ),
-                amount_cell(row.final_balance.format()),
+                amount_cell_with_style(
+                    row.final_balance.format(),
+                    emphasized_tone_style(Tone::Pots),
+                ),
             ])
             .style(focused_row_style(row_focus))
         })
         .collect::<Vec<_>>();
     rows.push(
         Row::new(vec![
-            Cell::from("Total"),
-            amount_cell(state.calculated.totals.pots_carried_total.format()),
-            amount_cell(state.calculated.totals.pots_monthly_change_total.format()),
-            amount_cell(state.calculated.totals.pots_final_total.format()),
+            Cell::from(Span::styled("Total", emphasized_tone_style(Tone::Pots))),
+            amount_cell_with_style(
+                state.calculated.totals.pots_carried_total.format(),
+                emphasized_tone_style(Tone::Pots),
+            ),
+            amount_cell_with_style(
+                state.calculated.totals.pots_monthly_change_total.format(),
+                emphasized_tone_style(Tone::Pots),
+            ),
+            amount_cell_with_style(
+                state.calculated.totals.pots_final_total.format(),
+                emphasized_tone_style(Tone::Pots),
+            ),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD)),
+        .style(bright_style().add_modifier(Modifier::BOLD)),
     );
 
     let table = Table::new(
@@ -931,8 +1335,9 @@ fn render_pots(
             Cell::from("Change"),
             Cell::from("Final"),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD)),
+        .style(emphasized_tone_style(Tone::Pots)),
     )
+    .style(toned_panel_style(Tone::Pots))
     .block(section_block(
         show_title.then_some("Savings Pots"),
         format!(
@@ -940,6 +1345,7 @@ fn render_pots(
             state.calculated.totals.pots_final_total.format()
         ),
         section_focus_state(state, SectionId::SavingsPots),
+        Tone::Pots,
         chrome,
     ));
     frame.render_widget(table, area);
@@ -1002,22 +1408,16 @@ fn value_for_field(state: &EditorState, field: &FieldId, document: &MonthDocumen
     field.current_value_text(document)
 }
 
-fn styled_value_cell(value: String, focus: EditorFocusState) -> Cell<'static> {
+fn styled_value_cell_with_tone(
+    value: String,
+    focus: EditorFocusState,
+    tone: Tone,
+) -> Cell<'static> {
     let cell = amount_cell(value);
     match focus {
-        EditorFocusState::Unfocused => cell,
-        EditorFocusState::Selected => cell.style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ),
-        EditorFocusState::Editing => cell.style(
-            Style::default()
-                .bg(Color::Yellow)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        ),
+        EditorFocusState::Unfocused => cell.style(tone_style(tone)),
+        EditorFocusState::Selected => cell.style(selected_style()),
+        EditorFocusState::Editing => cell.style(editing_style()),
     }
 }
 
@@ -1036,9 +1436,8 @@ fn focus_marker(focus: EditorFocusState) -> &'static str {
 fn focused_row_style(focus: EditorFocusState) -> Style {
     match focus {
         EditorFocusState::Unfocused => Style::default(),
-        EditorFocusState::Selected | EditorFocusState::Editing => {
-            Style::default().bg(Color::DarkGray).fg(Color::White)
-        }
+        EditorFocusState::Selected => selected_style(),
+        EditorFocusState::Editing => selected_style(),
     }
 }
 
@@ -1046,27 +1445,37 @@ fn amount_cell(value: String) -> Cell<'static> {
     Cell::from(Line::from(value).alignment(Alignment::Right))
 }
 
+fn amount_cell_with_style(value: String, style: Style) -> Cell<'static> {
+    amount_cell(value).style(style)
+}
+
 fn section_height(row_count: usize, compact_title: bool) -> u16 {
     let base = row_count as u16 + if compact_title { 3 } else { 4 };
     base.max(6)
 }
 
-fn status_line(persistence: PersistenceState, sync: SyncState) -> String {
-    format!(
-        "Persistence: {}  |  Sync: {}",
-        match persistence {
-            PersistenceState::Clean => "clean",
-            PersistenceState::Dirty => "dirty",
-            PersistenceState::Autosaving => "autosaving",
-            PersistenceState::SaveFailed => "failed",
-        },
-        match sync {
-            SyncState::SyncPending => "pending",
-            SyncState::Syncing => "syncing",
-            SyncState::Synced => "synced",
-            SyncState::SyncFailed => "failed",
-        }
-    )
+fn status_line(persistence: PersistenceState, sync: SyncState) -> Line<'static> {
+    let persistence_label = match persistence {
+        PersistenceState::Clean => "clean",
+        PersistenceState::Dirty => "dirty",
+        PersistenceState::Autosaving => "autosaving",
+        PersistenceState::SaveFailed => "failed",
+    };
+    let sync_label = match sync {
+        SyncState::SyncPending => "pending",
+        SyncState::Syncing => "syncing",
+        SyncState::Synced => "synced",
+        SyncState::SyncFailed => "failed",
+    };
+    Line::from(vec![
+        Span::styled("Persistence: ", muted_style()),
+        Span::styled(
+            persistence_label,
+            operational_status_style(persistence_label),
+        ),
+        Span::styled("  |  Sync: ", subtle_style()),
+        Span::styled(sync_label, operational_status_style(sync_label)),
+    ])
 }
 
 fn hint_lines(width: u16, hints: &[&str]) -> Vec<Line<'static>> {
@@ -1074,6 +1483,7 @@ fn hint_lines(width: u16, hints: &[&str]) -> Vec<Line<'static>> {
     let separator = " | ";
     let mut lines = Vec::new();
     let mut current = String::new();
+    let mut current_spans = Vec::new();
 
     for hint in hints {
         let candidate_len = if current.is_empty() {
@@ -1082,16 +1492,19 @@ fn hint_lines(width: u16, hints: &[&str]) -> Vec<Line<'static>> {
             current.len() + separator.len() + hint.len()
         };
         if !current.is_empty() && candidate_len > available {
-            lines.push(Line::from(std::mem::take(&mut current)));
+            lines.push(Line::from(std::mem::take(&mut current_spans)));
+            current.clear();
         }
         if !current.is_empty() {
             current.push_str(separator);
+            current_spans.push(Span::styled(separator, subtle_style()));
         }
         current.push_str(hint);
+        current_spans.extend(key_hint_spans(hint));
     }
 
     if !current.is_empty() {
-        lines.push(Line::from(current));
+        lines.push(Line::from(current_spans));
     }
 
     lines
@@ -1105,10 +1518,15 @@ fn abbreviate_path(path: &Path, max_width: usize) -> String {
     format!("...{}", &text[text.len() - (max_width - 3)..])
 }
 
-fn panel_block(title: &str, chrome: PanelChrome) -> Block<'static> {
+fn panel_block(title: &str, chrome: PanelChrome, tone: Tone) -> Block<'static> {
     Block::default()
         .borders(panel_borders(chrome))
-        .title(title.to_owned())
+        .style(toned_panel_style(tone))
+        .border_style(panel_border_style(tone))
+        .title(
+            Line::from(Span::styled(title.to_owned(), emphasized_tone_style(tone)))
+                .alignment(Alignment::Left),
+        )
 }
 
 fn panel_borders(chrome: PanelChrome) -> Borders {
@@ -1122,91 +1540,114 @@ fn section_block(
     title: Option<&str>,
     subtotal: String,
     focus: EditorFocusState,
+    tone: Tone,
     chrome: PanelChrome,
 ) -> Block<'static> {
     let mut block = Block::default()
         .borders(panel_borders(chrome))
-        .border_style(section_emphasis_style(focus));
+        .style(toned_panel_style(tone))
+        .border_style(section_emphasis_style(focus, tone));
     if let Some(title) = title {
         block = block.title(
             Line::from(title.to_owned())
-                .style(section_emphasis_style(focus))
+                .style(section_emphasis_style(focus, tone))
                 .alignment(Alignment::Left),
         );
     }
-    block.title(Line::from(subtotal).alignment(Alignment::Right))
+    block.title(
+        Line::from(Span::styled(
+            subtotal,
+            emphasized_tone_style(match focus {
+                EditorFocusState::Editing => Tone::Warning,
+                EditorFocusState::Selected => tone,
+                EditorFocusState::Unfocused => tone,
+            }),
+        ))
+        .alignment(Alignment::Right),
+    )
 }
 
-fn section_emphasis_style(focus: EditorFocusState) -> Style {
+fn section_emphasis_style(focus: EditorFocusState, tone: Tone) -> Style {
     match focus {
-        EditorFocusState::Unfocused => Style::default(),
-        EditorFocusState::Selected => Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
-        EditorFocusState::Editing => Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
+        EditorFocusState::Unfocused => tone_style(tone),
+        EditorFocusState::Selected => emphasized_tone_style(tone),
+        EditorFocusState::Editing => emphasized_tone_style(Tone::Warning),
     }
 }
 
 fn compact_summary_text(calculated: &CalculatedMonth, width: u16) -> Text<'static> {
     let metrics = vec![
-        format!("Accounts {}", calculated.totals.accounts_subtotal.format()),
-        format!(
-            "Timing Adjustments {}",
-            calculated.totals.timing_adjustments_subtotal.format()
+        (
+            "Accounts",
+            calculated.totals.accounts_subtotal.format(),
+            Tone::Accounts,
         ),
-        format!(
-            "Next Month Earmarks {}",
-            calculated.totals.next_month_earmarks_subtotal.format()
+        (
+            "Timing Adjustments",
+            calculated.totals.timing_adjustments_subtotal.format(),
+            Tone::Timing,
         ),
-        format!(
-            "Savings Pots {}",
-            calculated.totals.pots_final_total.format()
+        (
+            "Next Month Earmarks",
+            calculated.totals.next_month_earmarks_subtotal.format(),
+            Tone::Earmarks,
         ),
-        format!(
-            "Total allocated {}",
-            calculated.totals.total_allocated.format()
+        (
+            "Savings Pots",
+            calculated.totals.pots_final_total.format(),
+            Tone::Pots,
         ),
-        format!(
-            "Overall difference {}",
-            calculated.validation.overall_difference.format()
+        (
+            "Total allocated",
+            calculated.totals.total_allocated.format(),
+            Tone::Summary,
         ),
-        format!(
-            "Status {}",
+        (
+            "Overall difference",
+            calculated.validation.overall_difference.format(),
+            validation_tone(calculated.validation.is_valid),
+        ),
+        (
+            "Status",
             if calculated.validation.is_valid {
-                "valid"
+                "valid".to_owned()
             } else {
-                "invalid"
-            }
+                "invalid".to_owned()
+            },
+            validation_tone(calculated.validation.is_valid),
         ),
     ];
     Text::from(wrapped_metric_lines(width, &metrics))
 }
 
-fn wrapped_metric_lines(width: u16, metrics: &[String]) -> Vec<Line<'static>> {
+fn wrapped_metric_lines(width: u16, metrics: &[(&str, String, Tone)]) -> Vec<Line<'static>> {
     let available = width.saturating_sub(4) as usize;
     let separator = " | ";
     let mut lines = Vec::new();
     let mut current = String::new();
+    let mut current_spans = Vec::new();
 
-    for metric in metrics {
+    for (label, value, tone) in metrics {
+        let metric_text = format!("{label} {value}");
         let candidate_len = if current.is_empty() {
-            metric.len()
+            metric_text.len()
         } else {
-            current.len() + separator.len() + metric.len()
+            current.len() + separator.len() + metric_text.len()
         };
         if !current.is_empty() && candidate_len > available {
-            lines.push(Line::from(std::mem::take(&mut current)));
+            lines.push(Line::from(std::mem::take(&mut current_spans)));
+            current.clear();
         }
         if !current.is_empty() {
             current.push_str(separator);
+            current_spans.push(Span::styled(separator, subtle_style()));
         }
-        current.push_str(metric);
+        current.push_str(&metric_text);
+        current_spans.extend(metric_spans(label, value.clone(), *tone));
     }
 
     if !current.is_empty() {
-        lines.push(Line::from(current));
+        lines.push(Line::from(current_spans));
     }
 
     lines
@@ -1368,6 +1809,27 @@ mod tests {
     }
 
     #[test]
+    fn navigation_render_uses_semantic_status_and_difference_colours() {
+        let config = AppConfig::default_mvp();
+        let mut state = match navigation_route(&config) {
+            Route::Navigation(state) => state,
+            _ => unreachable!(),
+        };
+        state.months.push(state.months[0].clone());
+        state.selected = 1;
+        let route = Route::Navigation(state);
+        let buffer = draw_route(&route, Some(&config), 105, 48);
+
+        let (status_x, status_y) = find_text(&buffer, "draft").unwrap();
+        let status = &buffer[(status_x, status_y)];
+        assert_eq!(status.fg, Color::Rgb(0xff, 0xc6, 0x6d));
+
+        let (diff_x, diff_y) = find_text(&buffer, "£801.00").unwrap();
+        let diff = &buffer[(diff_x, diff_y)];
+        assert_eq!(diff.fg, Color::Rgb(0xd2, 0x51, 0x51));
+    }
+
+    #[test]
     fn editor_snapshot() {
         let config = AppConfig::default_mvp();
         let route = editor_route(&config);
@@ -1418,12 +1880,12 @@ mod tests {
 
         let (marker_x, marker_y) = find_text(&buffer, "› Fun expensive stuff").unwrap();
         let marker = &buffer[(marker_x, marker_y)];
-        assert_eq!(marker.fg, Color::White);
-        assert_eq!(marker.bg, Color::DarkGray);
+        assert_eq!(marker.fg, Color::Rgb(0xee, 0xee, 0xec));
+        assert_eq!(marker.bg, Color::Rgb(0x26, 0x26, 0x26));
 
         let (title_x, title_y) = find_text(&buffer, "Savings Pots").unwrap();
         let title = &buffer[(title_x, title_y)];
-        assert_eq!(title.fg, Color::Cyan);
+        assert_eq!(title.fg, Color::Rgb(0xa5, 0xc2, 0x61));
         assert!(title.modifier.contains(Modifier::BOLD));
     }
 
@@ -1443,14 +1905,50 @@ mod tests {
 
         let (value_x, value_y) = find_text(&buffer, "£820.00_").unwrap();
         let value = &buffer[(value_x, value_y)];
-        assert_eq!(value.fg, Color::Black);
-        assert_eq!(value.bg, Color::Yellow);
+        assert_eq!(value.fg, Color::Rgb(0xff, 0xc6, 0x6d));
+        assert_eq!(value.bg, Color::Rgb(0x26, 0x26, 0x26));
         assert!(value.modifier.contains(Modifier::BOLD));
 
         let (title_x, title_y) = find_text(&buffer, "Savings Pots").unwrap();
         let title = &buffer[(title_x, title_y)];
-        assert_eq!(title.fg, Color::Yellow);
+        assert_eq!(title.fg, Color::Rgb(0xff, 0xc6, 0x6d));
         assert!(title.modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn editor_render_uses_dark_neutral_section_surfaces_in_wide_layout() {
+        let config = AppConfig::default_mvp();
+        let buffer = draw_route(&editor_route(&config), Some(&config), 210, 48);
+
+        let (accounts_x, accounts_y) = find_text(&buffer, "Entered").unwrap();
+        let accounts = &buffer[(accounts_x, accounts_y)];
+        assert_eq!(accounts.bg, Color::Rgb(0x26, 0x26, 0x26));
+
+        let (timing_x, timing_y) = find_text(&buffer, "Effect").unwrap();
+        let timing = &buffer[(timing_x, timing_y)];
+        assert_eq!(timing.bg, Color::Rgb(0x26, 0x26, 0x26));
+
+        let (pots_x, pots_y) = find_text(&buffer, "Final").unwrap();
+        let pots = &buffer[(pots_x, pots_y)];
+        assert_eq!(pots.bg, Color::Rgb(0x26, 0x26, 0x26));
+    }
+
+    #[test]
+    fn editor_render_separates_liability_cues_from_validation_failure() {
+        let config = AppConfig::default_mvp();
+        let buffer = draw_route(&editor_route(&config), Some(&config), 105, 48);
+
+        let (minus_x, minus_y) = find_text(&buffer, "-£204.00").unwrap();
+        let liability = &buffer[(minus_x, minus_y)];
+        assert_eq!(liability.fg, Color::Rgb(0xd1, 0x97, 0xd9));
+
+        let (validation_x, validation_y) = find_text(&buffer, "outside tolerance").unwrap();
+        let validation = &buffer[(validation_x, validation_y)];
+        assert_eq!(validation.fg, Color::Rgb(0xd2, 0x51, 0x51));
+
+        let (sync_x, sync_y) = find_text(&buffer, "synced").unwrap();
+        let sync = &buffer[(sync_x, sync_y)];
+        assert_eq!(sync.fg, Color::Rgb(0x8a, 0xb7, 0xd9));
     }
 
     #[test]
@@ -1515,6 +2013,36 @@ mod tests {
         assert!(rendered.contains("Amount"));
         assert!(rendered.contains("Next: General spending"));
         assert!(rendered.contains("Earmarks £505.00  |  Diff -£745.00"));
+    }
+
+    #[test]
+    fn guided_render_gives_current_input_more_focus_than_preview_context() {
+        let config = AppConfig::default_mvp();
+        let route = guided_route(&config);
+        let input = match &route {
+            Route::GuidedCreation(state) => state.input.display_text(),
+            _ => unreachable!(),
+        };
+        let buffer = draw_route(&route, Some(&config), 105, 48);
+
+        let (input_x, input_y) = find_text(&buffer, &input).unwrap();
+        let input_cell = &buffer[(input_x, input_y)];
+        assert_eq!(input_cell.fg, Color::Rgb(0xee, 0xee, 0xec));
+        assert_eq!(input_cell.bg, Color::Rgb(0x26, 0x26, 0x26));
+
+        let (preview_x, preview_y) = find_text(&buffer, "Accounts").unwrap();
+        let preview = &buffer[(preview_x, preview_y)];
+        assert_eq!(preview.bg, Color::Rgb(0x26, 0x26, 0x26));
+    }
+
+    #[test]
+    fn guided_status_prioritises_validation_above_operational_metadata() {
+        let config = AppConfig::default_mvp();
+        let buffer = draw_route(&guided_route(&config), Some(&config), 105, 48);
+
+        let (_, validation_y) = find_text(&buffer, "outside tolerance").unwrap();
+        let (_, persistence_y) = find_text(&buffer, "Persistence").unwrap();
+        assert!(validation_y < persistence_y);
     }
 
     #[test]
