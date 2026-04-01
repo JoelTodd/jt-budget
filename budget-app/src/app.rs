@@ -178,10 +178,10 @@ impl App {
             },
             NavigationDialog::Rename(mut dialog) => match key.code {
                 KeyCode::Esc => state.dialog = None,
-                KeyCode::Enter => match MonthId::parse(dialog.input.trim()) {
+                KeyCode::Enter => match validate_rename_target(dialog.source, &dialog.input) {
                     Ok(target) => return self.rename_month(dialog.source, target),
                     Err(error) => {
-                        dialog.error = Some(error.to_string());
+                        dialog.error = Some(error);
                         state.dialog = Some(NavigationDialog::Rename(dialog));
                     }
                 },
@@ -758,21 +758,33 @@ fn is_month_id_character(character: char) -> bool {
     character.is_ascii_digit() || character == '-'
 }
 
+fn validate_rename_target(source: MonthId, input: &str) -> std::result::Result<MonthId, String> {
+    let target = MonthId::parse(input.trim()).map_err(|error| error.to_string())?;
+    if target == source {
+        return Err(format!("Month is already named {source}"));
+    }
+    Ok(target)
+}
+
 fn is_money_input_character(character: char) -> bool {
     character.is_ascii_digit() || matches!(character, '.' | '-')
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
 
     use budget_core::{AppConfig, MonthDocument, MonthId, calculate_month};
     use crossterm::event::{KeyCode, KeyEvent};
+    use tempfile::TempDir;
 
     use super::App;
     use crate::state::{
-        EditorState, FieldId, InteractionState, PersistenceState, Route, SyncState,
+        EditorState, FieldId, InteractionState, MonthEntry, NavigationDialog, NavigationState,
+        PersistenceState, RenameDialog, Route, SyncState,
     };
+    use crate::{repository::Repository, state::FailureState};
 
     #[test]
     fn editor_navigation_visits_each_field_once_in_visible_order() {
@@ -815,5 +827,157 @@ mod tests {
         assert_eq!(visited, expected);
         let unique = visited.iter().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(unique.len(), visited.len());
+    }
+
+    #[test]
+    fn rename_dialog_keeps_unchanged_month_error_inline() {
+        let (_temp, repo_root, repository, navigation, source) = seeded_navigation_app("2026-03");
+        let mut app = App {
+            repo_root,
+            repository: Some(repository),
+            route: Route::Navigation(NavigationState {
+                dialog: Some(NavigationDialog::Rename(RenameDialog {
+                    source,
+                    input: source.key(),
+                    error: None,
+                })),
+                ..navigation
+            }),
+        };
+
+        app.handle_key(KeyEvent::from(KeyCode::Enter)).unwrap();
+
+        match app.route {
+            Route::Navigation(state) => {
+                assert_eq!(state.selected, 0);
+                match state.dialog {
+                    Some(NavigationDialog::Rename(dialog)) => {
+                        assert_eq!(dialog.source, source);
+                        assert_eq!(dialog.input, "2026-03");
+                        assert_eq!(
+                            dialog.error.as_deref(),
+                            Some("Month is already named 2026-03")
+                        );
+                    }
+                    other => panic!("expected rename dialog, got {other:?}"),
+                }
+            }
+            other => panic!("expected navigation route, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rename_dialog_preserves_input_after_validation_error_and_allows_retry() {
+        let (_temp, repo_root, repository, navigation, source) = seeded_navigation_app("2026-03");
+        let mut app = App {
+            repo_root,
+            repository: Some(repository),
+            route: Route::Navigation(NavigationState {
+                dialog: Some(NavigationDialog::Rename(RenameDialog {
+                    source,
+                    input: "2026-13".to_owned(),
+                    error: None,
+                })),
+                ..navigation
+            }),
+        };
+
+        app.handle_key(KeyEvent::from(KeyCode::Enter)).unwrap();
+        match &app.route {
+            Route::Navigation(state) => match &state.dialog {
+                Some(NavigationDialog::Rename(dialog)) => {
+                    assert_eq!(dialog.input, "2026-13");
+                    assert_eq!(
+                        dialog.error.as_deref(),
+                        Some("invalid month id `2026-13`, expected YYYY-MM")
+                    );
+                }
+                other => panic!("expected rename dialog, got {other:?}"),
+            },
+            other => panic!("expected navigation route, got {other:?}"),
+        }
+
+        app.handle_key(KeyEvent::from(KeyCode::Backspace)).unwrap();
+        app.handle_key(KeyEvent::from(KeyCode::Char('2'))).unwrap();
+
+        match &app.route {
+            Route::Navigation(state) => match &state.dialog {
+                Some(NavigationDialog::Rename(dialog)) => {
+                    assert_eq!(dialog.input, "2026-12");
+                    assert_eq!(dialog.error, None);
+                }
+                other => panic!("expected rename dialog, got {other:?}"),
+            },
+            other => panic!("expected navigation route, got {other:?}"),
+        }
+
+        app.handle_key(KeyEvent::from(KeyCode::Enter)).unwrap();
+
+        match app.route {
+            Route::Navigation(state) => {
+                assert!(state.dialog.is_none());
+                assert_eq!(state.selected, 0);
+                assert_eq!(
+                    state.months[0].document.month,
+                    MonthId::parse("2026-12").unwrap()
+                );
+            }
+            other => panic!("expected navigation route, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rename_dialog_uses_blocking_failure_for_repository_faults() {
+        let (_temp, repo_root, repository, navigation, source) = seeded_navigation_app("2026-03");
+        fs::remove_file(repo_root.join("months/2026-03.toml")).unwrap();
+
+        let mut app = App {
+            repo_root,
+            repository: Some(repository),
+            route: Route::Navigation(NavigationState {
+                dialog: Some(NavigationDialog::Rename(RenameDialog {
+                    source,
+                    input: "2026-04".to_owned(),
+                    error: None,
+                })),
+                ..navigation
+            }),
+        };
+
+        app.handle_key(KeyEvent::from(KeyCode::Enter)).unwrap();
+
+        match app.route {
+            Route::BlockingFailure(FailureState { title, message, .. }) => {
+                assert_eq!(title, "Could not rename 2026-03");
+                assert!(message.contains("month `2026-03` does not exist"));
+            }
+            other => panic!("expected blocking failure, got {other:?}"),
+        }
+    }
+
+    fn seeded_navigation_app(
+        month_key: &str,
+    ) -> (TempDir, PathBuf, Repository, NavigationState, MonthId) {
+        let temp = tempfile::tempdir().unwrap();
+        let repo_root = temp.path().join("budget");
+        Repository::init(&repo_root, None).unwrap();
+
+        let repository = Repository::open(&repo_root).unwrap();
+        let month = MonthId::parse(month_key).unwrap();
+        let mut document = repository.create_month_draft(month).unwrap();
+        repository.save_month(&mut document).unwrap();
+        let navigation = NavigationState::new(
+            repository
+                .list_months()
+                .unwrap()
+                .into_iter()
+                .map(|loaded| MonthEntry {
+                    document: loaded.document,
+                    calculated: loaded.calculated,
+                })
+                .collect(),
+        );
+
+        (temp, repo_root, repository, navigation, month)
     }
 }
