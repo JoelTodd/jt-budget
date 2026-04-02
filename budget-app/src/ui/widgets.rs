@@ -91,7 +91,7 @@ pub(super) fn styled_value_cell_with_tone(
     }
 }
 
-pub(super) fn labeled_row_cell(label: &str, focus: EditorFocusState) -> Cell<'static> {
+pub(super) fn labelled_row_cell(label: &str, focus: EditorFocusState) -> Cell<'static> {
     Cell::from(format!("{}{}", focus_marker(focus), label))
 }
 

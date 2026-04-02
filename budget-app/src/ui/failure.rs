@@ -1,13 +1,13 @@
 use ratatui::prelude::{Frame, Line, Span};
 use ratatui::widgets::{Clear, Paragraph, Wrap};
 
-use super::layout::{PanelChrome, centered_rect};
+use super::layout::{PanelChrome, centred_rect};
 use super::theme::{Tone, UiTheme, key_hint_spans};
 use super::widgets::panel_block;
 use crate::state::FailureState;
 
 pub(super) fn render_failure(frame: &mut Frame<'_>, state: &FailureState, theme: &UiTheme) {
-    let area = centered_rect(70, 40, frame.area());
+    let area = centred_rect(70, 40, frame.area());
     frame.render_widget(Clear, area);
     // Failures intentionally cover the active route so the user cannot keep
     // editing after a save or sync operation has become unsafe.

@@ -7,8 +7,8 @@ use super::App;
 use super::document::{is_month_id_character, validate_rename_target};
 use crate::repository::{Repository, SyncOutcome};
 use crate::state::{
-    CreateDialog, DeleteDialog, FailureState, MonthEntry, NavigationDialog, NavigationState,
-    RenameDialog, RetryTarget, Route,
+    CreateDialogue, DeleteDialogue, FailureState, MonthEntry, NavigationDialogue, NavigationState,
+    RenameDialogue, RetryTarget, Route,
 };
 
 impl App {
@@ -17,14 +17,14 @@ impl App {
         mut state: NavigationState,
         key: KeyEvent,
     ) -> Result<()> {
-        if let Some(dialog) = state.dialog.clone() {
-            return self.handle_navigation_dialog(state, dialog, key);
+        if let Some(dialogue) = state.dialogue.clone() {
+            return self.handle_navigation_dialogue(state, dialogue, key);
         }
 
         match key.code {
             KeyCode::Char('q') => self.route = Route::Shutdown,
             KeyCode::Char('n') => {
-                state.dialog = Some(NavigationDialog::Create(CreateDialog {
+                state.dialogue = Some(NavigationDialogue::Create(CreateDialogue {
                     input: String::new(),
                     error: None,
                 }));
@@ -32,7 +32,7 @@ impl App {
             }
             KeyCode::Char('m') => {
                 if let Some(entry) = state.selected_month() {
-                    state.dialog = Some(NavigationDialog::Rename(RenameDialog {
+                    state.dialogue = Some(NavigationDialogue::Rename(RenameDialogue {
                         source: entry.document.month,
                         input: entry.document.month.key(),
                         error: None,
@@ -42,7 +42,7 @@ impl App {
             }
             KeyCode::Char('d') => {
                 if let Some(entry) = state.selected_month() {
-                    state.dialog = Some(NavigationDialog::Delete(DeleteDialog {
+                    state.dialogue = Some(NavigationDialogue::Delete(DeleteDialogue {
                         month: entry.document.month,
                         confirmation: String::new(),
                         error: None,
@@ -75,75 +75,75 @@ impl App {
         Ok(())
     }
 
-    pub(super) fn handle_navigation_dialog(
+    pub(super) fn handle_navigation_dialogue(
         &mut self,
         mut state: NavigationState,
-        dialog: NavigationDialog,
+        dialogue: NavigationDialogue,
         key: KeyEvent,
     ) -> Result<()> {
-        match dialog {
-            NavigationDialog::Create(mut dialog) => match key.code {
-                KeyCode::Esc => state.dialog = None,
-                KeyCode::Enter => match MonthId::parse(dialog.input.trim()) {
+        match dialogue {
+            NavigationDialogue::Create(mut dialogue) => match key.code {
+                KeyCode::Esc => state.dialogue = None,
+                KeyCode::Enter => match MonthId::parse(dialogue.input.trim()) {
                     Ok(month) => return self.start_guided_creation(month),
                     Err(error) => {
-                        dialog.error = Some(error.to_string());
-                        state.dialog = Some(NavigationDialog::Create(dialog));
+                        dialogue.error = Some(error.to_string());
+                        state.dialogue = Some(NavigationDialogue::Create(dialogue));
                     }
                 },
                 KeyCode::Backspace => {
-                    dialog.input.pop();
-                    dialog.error = None;
-                    state.dialog = Some(NavigationDialog::Create(dialog));
+                    dialogue.input.pop();
+                    dialogue.error = None;
+                    state.dialogue = Some(NavigationDialogue::Create(dialogue));
                 }
                 KeyCode::Char(character) if is_month_id_character(character) => {
-                    dialog.input.push(character);
-                    dialog.error = None;
-                    state.dialog = Some(NavigationDialog::Create(dialog));
+                    dialogue.input.push(character);
+                    dialogue.error = None;
+                    state.dialogue = Some(NavigationDialogue::Create(dialogue));
                 }
-                _ => state.dialog = Some(NavigationDialog::Create(dialog)),
+                _ => state.dialogue = Some(NavigationDialogue::Create(dialogue)),
             },
-            NavigationDialog::Rename(mut dialog) => match key.code {
-                KeyCode::Esc => state.dialog = None,
-                KeyCode::Enter => match validate_rename_target(dialog.source, &dialog.input) {
-                    Ok(target) => return self.rename_month(dialog.source, target),
+            NavigationDialogue::Rename(mut dialogue) => match key.code {
+                KeyCode::Esc => state.dialogue = None,
+                KeyCode::Enter => match validate_rename_target(dialogue.source, &dialogue.input) {
+                    Ok(target) => return self.rename_month(dialogue.source, target),
                     Err(error) => {
-                        dialog.error = Some(error);
-                        state.dialog = Some(NavigationDialog::Rename(dialog));
+                        dialogue.error = Some(error);
+                        state.dialogue = Some(NavigationDialogue::Rename(dialogue));
                     }
                 },
                 KeyCode::Backspace => {
-                    dialog.input.pop();
-                    dialog.error = None;
-                    state.dialog = Some(NavigationDialog::Rename(dialog));
+                    dialogue.input.pop();
+                    dialogue.error = None;
+                    state.dialogue = Some(NavigationDialogue::Rename(dialogue));
                 }
                 KeyCode::Char(character) if is_month_id_character(character) => {
-                    dialog.input.push(character);
-                    dialog.error = None;
-                    state.dialog = Some(NavigationDialog::Rename(dialog));
+                    dialogue.input.push(character);
+                    dialogue.error = None;
+                    state.dialogue = Some(NavigationDialogue::Rename(dialogue));
                 }
-                _ => state.dialog = Some(NavigationDialog::Rename(dialog)),
+                _ => state.dialogue = Some(NavigationDialogue::Rename(dialogue)),
             },
-            NavigationDialog::Delete(mut dialog) => match key.code {
-                KeyCode::Esc => state.dialog = None,
+            NavigationDialogue::Delete(mut dialogue) => match key.code {
+                KeyCode::Esc => state.dialogue = None,
                 KeyCode::Enter => {
-                    if dialog.confirmation.trim() == dialog.month.key() {
-                        return self.delete_month(dialog.month);
+                    if dialogue.confirmation.trim() == dialogue.month.key() {
+                        return self.delete_month(dialogue.month);
                     }
-                    dialog.error = Some(format!("Type {} to confirm deletion", dialog.month));
-                    state.dialog = Some(NavigationDialog::Delete(dialog));
+                    dialogue.error = Some(format!("Type {} to confirm deletion", dialogue.month));
+                    state.dialogue = Some(NavigationDialogue::Delete(dialogue));
                 }
                 KeyCode::Backspace => {
-                    dialog.confirmation.pop();
-                    dialog.error = None;
-                    state.dialog = Some(NavigationDialog::Delete(dialog));
+                    dialogue.confirmation.pop();
+                    dialogue.error = None;
+                    state.dialogue = Some(NavigationDialogue::Delete(dialogue));
                 }
                 KeyCode::Char(character) if is_month_id_character(character) => {
-                    dialog.confirmation.push(character);
-                    dialog.error = None;
-                    state.dialog = Some(NavigationDialog::Delete(dialog));
+                    dialogue.confirmation.push(character);
+                    dialogue.error = None;
+                    state.dialogue = Some(NavigationDialogue::Delete(dialogue));
                 }
-                _ => state.dialog = Some(NavigationDialog::Delete(dialog)),
+                _ => state.dialogue = Some(NavigationDialogue::Delete(dialogue)),
             },
         }
 

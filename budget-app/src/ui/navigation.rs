@@ -4,13 +4,13 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::prelude::{Frame, Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap};
 
-use super::layout::{PanelChrome, centered_rect};
+use super::layout::{PanelChrome, centred_rect};
 use super::theme::{Tone, UiTheme, month_state_style, validation_tone};
 use super::widgets::{
     abbreviate_path, amount_cell_with_style, compact_summary_text, format_updated_timestamp,
     hint_lines, panel_block,
 };
-use crate::state::{DeleteDialog, NavigationDialog, NavigationState};
+use crate::state::{DeleteDialogue, NavigationDialogue, NavigationState};
 
 pub(super) fn render_navigation(
     frame: &mut Frame<'_>,
@@ -76,7 +76,7 @@ pub(super) fn render_navigation(
 
     let rows = state.months.iter().map(|entry| {
         let status = if entry.calculated.validation.is_valid {
-            "finalized"
+            "finalised"
         } else {
             "draft"
         };
@@ -147,17 +147,21 @@ pub(super) fn render_navigation(
         .wrap(Wrap { trim: false });
     frame.render_widget(summary, body[1]);
 
-    if let Some(dialog) = &state.dialog {
-        render_navigation_dialog(frame, dialog, theme);
+    if let Some(dialogue) = &state.dialogue {
+        render_navigation_dialogue(frame, dialogue, theme);
     }
 }
 
-fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog, theme: &UiTheme) {
-    let area = centered_rect(68, 36, frame.area());
+fn render_navigation_dialogue(
+    frame: &mut Frame<'_>,
+    dialogue: &NavigationDialogue,
+    theme: &UiTheme,
+) {
+    let area = centred_rect(68, 36, frame.area());
     frame.render_widget(Clear, area);
-    match dialog {
-        NavigationDialog::Create(dialog) => {
-            render_dialog(
+    match dialogue {
+        NavigationDialogue::Create(dialogue) => {
+            render_dialogue(
                 frame,
                 area,
                 "New Month",
@@ -166,9 +170,9 @@ fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog, th
                     "Create month".to_owned(),
                     "".to_owned(),
                     "Enter YYYY-MM".to_owned(),
-                    dialog.input.clone(),
+                    dialogue.input.clone(),
                     "".to_owned(),
-                    dialog
+                    dialogue
                         .error
                         .clone()
                         .unwrap_or_else(|| "Enter confirms. Esc cancels.".to_owned()),
@@ -176,19 +180,19 @@ fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog, th
                 theme,
             );
         }
-        NavigationDialog::Rename(dialog) => {
-            render_dialog(
+        NavigationDialogue::Rename(dialogue) => {
+            render_dialogue(
                 frame,
                 area,
                 "Rename Month",
                 Tone::Navigation,
                 &[
-                    format!("Rename {}", dialog.source.display_label()),
+                    format!("Rename {}", dialogue.source.display_label()),
                     "".to_owned(),
                     "Enter the new month id (YYYY-MM)".to_owned(),
-                    dialog.input.clone(),
+                    dialogue.input.clone(),
                     "".to_owned(),
-                    dialog
+                    dialogue
                         .error
                         .clone()
                         .unwrap_or_else(|| "Enter confirms. Esc cancels.".to_owned()),
@@ -196,25 +200,30 @@ fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog, th
                 theme,
             );
         }
-        NavigationDialog::Delete(dialog) => {
-            render_delete_dialog(frame, area, dialog, theme);
+        NavigationDialogue::Delete(dialogue) => {
+            render_delete_dialogue(frame, area, dialogue, theme);
         }
     }
 }
 
-fn render_delete_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DeleteDialog, theme: &UiTheme) {
-    render_dialog(
+fn render_delete_dialogue(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    dialogue: &DeleteDialogue,
+    theme: &UiTheme,
+) {
+    render_dialogue(
         frame,
         area,
         "Delete Month",
         Tone::Danger,
         &[
-            format!("Delete {}?", dialog.month.display_label()),
+            format!("Delete {}?", dialogue.month.display_label()),
             "".to_owned(),
-            format!("Type {} to confirm deletion.", dialog.month),
-            dialog.confirmation.clone(),
+            format!("Type {} to confirm deletion.", dialogue.month),
+            dialogue.confirmation.clone(),
             "".to_owned(),
-            dialog
+            dialogue
                 .error
                 .clone()
                 .unwrap_or_else(|| "Enter confirms. Esc cancels.".to_owned()),
@@ -223,7 +232,7 @@ fn render_delete_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DeleteDialog
     );
 }
 
-fn render_dialog(
+fn render_dialogue(
     frame: &mut Frame<'_>,
     area: Rect,
     title: &str,
@@ -231,7 +240,7 @@ fn render_dialog(
     lines: &[String],
     theme: &UiTheme,
 ) {
-    // Dialog content is preassembled as lines so the create, rename, and
+    // Dialogue content is preassembled as lines so the create, rename, and
     // delete flows can share one renderer with route-specific copy.
     let text = Text::from(lines.iter().cloned().map(Line::from).collect::<Vec<_>>());
     frame.render_widget(

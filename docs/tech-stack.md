@@ -24,7 +24,7 @@ Use the following stack for the MVP:
 
 - **UI:** Ratatui + Crossterm
 - **Architecture:** synchronous event loop with explicit app state
-- **Serialization:** Serde
+- **Serialisation:** Serde
 - **Config format:** TOML
 - **Month data format:** TOML
 - **Sync:** Git CLI invoked from the app
@@ -57,7 +57,7 @@ The app needs a terminal UI that can handle:
 - live overall balance difference
 - validation and sync state indicators
 
-Ratatui is the best fit for that kind of custom terminal layout. It gives enough control to build a spreadsheet-like or dashboard-like screen without forcing the app into a menu-and-dialog structure.
+Ratatui is the best fit for that kind of custom terminal layout. It gives enough control to build a spreadsheet-like or dashboard-like screen without forcing the app into a menu-and-dialogue structure.
 
 Crossterm should be the terminal backend because it is cross-platform, pure Rust, and the default practical choice for Ratatui-based apps.
 
@@ -235,12 +235,12 @@ Month data needs to be:
 
 - human-readable
 - easy to inspect
-- structured enough for typed deserialization
+- structured enough for typed deserialisation
 - Git-diff friendly
 
 TOML is the best first choice because it keeps the file format consistent with config and stays readable to humans.
 
-If month files later prove awkward to serialize or rewrite in TOML, JSON is a valid fallback because it is simpler for machines, even if less pleasant for humans.
+If month files later prove awkward to serialise or rewrite in TOML, JSON is a valid fallback because it is simpler for machines, even if less pleasant for humans.
 
 ### TOML month files
 
@@ -259,7 +259,7 @@ If month files later prove awkward to serialize or rewrite in TOML, JSON is a va
 
 #### Strengths
 
-- very straightforward serialization
+- very straightforward serialisation
 - universal tooling support
 - deterministic structure
 
@@ -275,7 +275,7 @@ If month files later prove awkward to serialize or rewrite in TOML, JSON is a va
 
 ---
 
-## 6. Serialization
+## 6. Serialisation
 
 ### Recommendation
 
@@ -283,7 +283,7 @@ Use **Serde** across all app data models.
 
 ### Why
 
-Serde is the standard choice for Rust data serialization and allows the same domain models to be serialized to and from TOML and JSON with minimal duplication.
+Serde is the standard choice for Rust data serialisation and allows the same domain models to be serialised to and from TOML and JSON with minimal duplication.
 
 That means:
 
@@ -295,12 +295,12 @@ That means:
 
 - mature and standard
 - integrates cleanly with TOML and JSON
-- minimises serialization boilerplate
+- minimises serialisation boilerplate
 
 ### Weaknesses
 
 - requires care around backward compatibility if data formats evolve
-- some custom formatting behaviour may require handwritten serializers
+- some custom formatting behaviour may require handwritten serialisers
 
 ### Decision
 
@@ -575,14 +575,14 @@ This app has domain rules that are ideal for automated invariant testing.
 - savings pot delta calculations
 - validation tolerance logic
 - config parsing
-- month parsing and serialization
+- month parsing and serialisation
 
 ### Property tests should cover
 
 - arithmetic invariants
 - carry-forward plus delta equals final
 - validation behaves correctly around thresholds
-- roundtrip serialization for month data
+- roundtrip serialisation for month data
 - reshuffling does not break core accounting rules
 
 ### Snapshot tests should cover
@@ -672,7 +672,7 @@ The following options were considered but are not recommended for MVP:
 Rejected because the app is not fundamentally a concurrency-heavy or network-heavy system.
 
 ### Cursive as the primary UI framework
-Rejected because the app wants a custom editable monthly sheet more than a traditional dialog-driven interface.
+Rejected because the app wants a custom editable monthly sheet more than a traditional dialogue-driven interface.
 
 ### Raw terminal handling without a TUI layer
 Rejected because it would recreate solved problems and waste time.

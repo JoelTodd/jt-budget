@@ -31,7 +31,7 @@ use crate::ui;
 
 type AppTerminal = Terminal<CrosstermBackend<Stdout>>;
 
-/// Runs the interactive TUI against an initialized budget repository.
+/// Runs the interactive TUI against an initialised budget repository.
 pub fn run(repo_root: PathBuf) -> Result<()> {
     let mut app = App::bootstrap(repo_root);
     let mut terminal = setup_terminal()?;

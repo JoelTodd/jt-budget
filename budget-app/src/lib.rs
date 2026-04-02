@@ -14,9 +14,9 @@ use repository::Repository;
 
 pub use repository::{LoadedMonth, Repository as BudgetRepository};
 pub use state::{
-    CreateDialog, DeleteDialog, EditorState, FailureState, FieldId, GuidedCreationState,
-    InteractionState, MoneyInput, MonthEntry, NavigationDialog, NavigationState, PersistenceState,
-    RenameDialog, RetryTarget, Route, SectionId, SyncState,
+    CreateDialogue, DeleteDialogue, EditorState, FailureState, FieldId, GuidedCreationState,
+    InteractionState, MoneyInput, MonthEntry, NavigationDialogue, NavigationState,
+    PersistenceState, RenameDialogue, RetryTarget, Route, SectionId, SyncState,
 };
 
 /// Parses CLI arguments and dispatches the selected command.

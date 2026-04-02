@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use crate::state::SectionId;
 
-/// Semantic color roles used by the TUI instead of hard-coding palette slots at
+/// Semantic colour roles used by the TUI instead of hard-coding palette slots at
 /// individual call sites.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Tone {
@@ -73,8 +73,8 @@ pub(super) struct UiTheme {
 }
 
 /// Helper for constructing [`Color::Rgb`] values in tests and palette parsing.
-pub(super) fn rgb(color: RgbTriplet) -> Color {
-    Color::Rgb(color.0, color.1, color.2)
+pub(super) fn rgb(colour: RgbTriplet) -> Color {
+    Color::Rgb(colour.0, colour.1, colour.2)
 }
 
 impl UiTheme {
@@ -109,7 +109,7 @@ impl UiTheme {
         }
     }
 
-    fn tone_color(&self, tone: Tone) -> Color {
+    fn tone_colour(&self, tone: Tone) -> Color {
         match tone {
             Tone::Navigation => self.base0d,
             Tone::Guided => self.base0a,
@@ -126,7 +126,7 @@ impl UiTheme {
         }
     }
 
-    fn panel_surface_color(&self, _tone: Tone) -> Color {
+    fn panel_surface_colour(&self, _tone: Tone) -> Color {
         self.base00
     }
 
@@ -136,7 +136,7 @@ impl UiTheme {
 
     pub(super) fn toned_panel_style(&self, tone: Tone) -> Style {
         Style::default()
-            .bg(self.panel_surface_color(tone))
+            .bg(self.panel_surface_colour(tone))
             .fg(self.base05)
     }
 
@@ -153,7 +153,7 @@ impl UiTheme {
     }
 
     pub(super) fn tone_style(&self, tone: Tone) -> Style {
-        Style::default().fg(self.tone_color(tone))
+        Style::default().fg(self.tone_colour(tone))
     }
 
     pub(super) fn emphasized_tone_style(&self, tone: Tone) -> Style {
@@ -174,7 +174,7 @@ impl UiTheme {
     pub(super) fn editing_style(&self) -> Style {
         Style::default()
             .bg(self.base00)
-            .fg(self.tone_color(Tone::Warning))
+            .fg(self.tone_colour(Tone::Warning))
             .add_modifier(Modifier::BOLD)
     }
 }
@@ -199,14 +199,14 @@ impl Base24PaletteConfig {
             ("base24.base0E", self.base0_e.as_str()),
             ("base24.base0F", self.base0_f.as_str()),
         ] {
-            validate_hex_color(field, value)?;
+            validate_hex_colour(field, value)?;
         }
 
         Ok(())
     }
 }
 
-fn validate_hex_color(field: &str, value: &str) -> Result<(), String> {
+fn validate_hex_colour(field: &str, value: &str) -> Result<(), String> {
     let Some(hex) = value.strip_prefix('#') else {
         return Err(format!("{field} must use #RRGGBB"));
     };
@@ -217,8 +217,8 @@ fn validate_hex_color(field: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn parse_hex_triplet(color: &str) -> RgbTriplet {
-    let hex = color.strip_prefix('#').expect("base24 palette validated");
+pub(super) fn parse_hex_triplet(colour: &str) -> RgbTriplet {
+    let hex = colour.strip_prefix('#').expect("base24 palette validated");
     (
         u8::from_str_radix(&hex[0..2], 16).expect("base24 palette validated"),
         u8::from_str_radix(&hex[2..4], 16).expect("base24 palette validated"),

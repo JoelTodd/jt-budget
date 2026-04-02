@@ -194,7 +194,7 @@ impl MonthDocument {
         self.meta.updated_at = Some(text);
     }
 
-    /// Serializes the document with a freshly recomputed derived cache.
+    /// Serialises the document with a freshly recomputed derived cache.
     ///
     /// The cache exists only as an inspectable convenience in the repository;
     /// callers must still recompute derived values from editable state.
@@ -202,7 +202,7 @@ impl MonthDocument {
     /// # Errors
     ///
     /// Returns [`BudgetError`] if recalculation fails or the document cannot be
-    /// serialized to TOML.
+    /// serialised to TOML.
     pub fn to_pretty_toml(&self, config: &AppConfig) -> Result<String, BudgetError> {
         let calculated = calculate_month(config, self)?;
         let mut persisted = self.clone();
@@ -890,8 +890,8 @@ mod tests {
             document.savings_pots.insert("long_term_savings".to_owned(), SavingsPotState { carried_over: carried, monthly_change: 0 });
             document.savings_pots.insert("label".to_owned(), SavingsPotState { carried_over: carried, monthly_change: 0 });
 
-            let serialized = document.to_pretty_toml(&config).unwrap();
-            let reparsed: MonthDocument = toml::from_str(&serialized).unwrap();
+            let serialised = document.to_pretty_toml(&config).unwrap();
+            let reparsed: MonthDocument = toml::from_str(&serialised).unwrap();
             prop_assert_eq!(document.month, reparsed.month);
             prop_assert_eq!(document.accounts, reparsed.accounts);
             prop_assert_eq!(document.next_month_earmarks, reparsed.next_month_earmarks);

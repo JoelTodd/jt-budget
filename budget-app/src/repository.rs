@@ -1,4 +1,4 @@
-//! File-backed repository access with explicit git-based synchronization.
+//! File-backed repository access with explicit git-based synchronisation.
 //!
 //! The runtime depends on this layer to enforce strict sync semantics: normal
 //! operations may save locally first, but failures to pull or push are surfaced
@@ -48,7 +48,7 @@ impl Repository {
     /// # Errors
     ///
     /// Returns an error if the target directory is not empty, required files
-    /// cannot be written, or git initialization fails.
+    /// cannot be written, or git initialisation fails.
     pub fn init(root: &Path, remote: Option<&str>) -> Result<()> {
         ensure!(
             !root.exists() || fs::read_dir(root)?.next().transpose()?.is_none(),
@@ -76,7 +76,7 @@ impl Repository {
             run_git(root, ["remote", "add", "origin", remote])?;
         }
         run_git(root, ["add", "."])?;
-        run_git(root, ["commit", "-m", "Initialize budget repository"])?;
+        run_git(root, ["commit", "-m", "Initialise budget repository"])?;
         if remote.is_some() {
             run_git(root, ["push", "origin", DEFAULT_BRANCH])
                 .context("publishing initial repository state")?;
@@ -149,7 +149,7 @@ impl Repository {
         &self.root
     }
 
-    /// Reports whether a configured `origin` enables pull/push synchronization.
+    /// Reports whether a configured `origin` enables pull/push synchronisation.
     pub fn sync_enabled(&self) -> bool {
         self.sync_enabled
     }

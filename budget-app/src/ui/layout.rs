@@ -7,8 +7,8 @@ pub(super) enum PanelChrome {
     TopRule,
 }
 
-/// Returns a centered popup rectangle expressed as percentages of the frame.
-pub(super) fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+/// Returns a centred popup rectangle expressed as percentages of the frame.
+pub(super) fn centred_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

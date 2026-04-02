@@ -112,7 +112,7 @@ Prefer examples that can run as doctests.
 ## Testing
 
 - Write unit tests for internal logic and edge cases
-- Write integration tests for public behavior
+- Write integration tests for public behaviour
 - Test happy paths and failure paths
 - Keep tests deterministic and easy to understand
 
@@ -148,10 +148,10 @@ cargo doc --no-deps
 
 ## Performance
 
-- Measure before optimizing
+- Measure before optimising
 - Benchmark in release mode
 - Keep ownership and allocation decisions visible
-- Optimize proven bottlenecks
+- Optimise proven bottlenecks
 - Start with code that is clear enough to tune later
 
 ## Unsafe code

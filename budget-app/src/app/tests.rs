@@ -9,8 +9,8 @@ use tempfile::TempDir;
 use super::App;
 use crate::repository::Repository;
 use crate::state::{
-    CreateDialog, EditorState, FailureState, FieldId, InteractionState, MonthEntry,
-    NavigationDialog, NavigationState, PersistenceState, RenameDialog, RetryTarget, Route,
+    CreateDialogue, EditorState, FailureState, FieldId, InteractionState, MonthEntry,
+    NavigationDialogue, NavigationState, PersistenceState, RenameDialogue, RetryTarget, Route,
     SyncState,
 };
 
@@ -58,13 +58,13 @@ fn editor_navigation_visits_each_field_once_in_visible_order() {
 }
 
 #[test]
-fn rename_dialog_keeps_unchanged_month_error_inline() {
+fn rename_dialogue_keeps_unchanged_month_error_inline() {
     let (_temp, repo_root, repository, navigation, source) = seeded_navigation_app("2026-03");
     let mut app = App {
         repo_root,
         repository: Some(repository),
         route: Route::Navigation(NavigationState {
-            dialog: Some(NavigationDialog::Rename(RenameDialog {
+            dialogue: Some(NavigationDialogue::Rename(RenameDialogue {
                 source,
                 input: source.key(),
                 error: None,
@@ -78,16 +78,16 @@ fn rename_dialog_keeps_unchanged_month_error_inline() {
     match app.route {
         Route::Navigation(state) => {
             assert_eq!(state.selected, 0);
-            match state.dialog {
-                Some(NavigationDialog::Rename(dialog)) => {
-                    assert_eq!(dialog.source, source);
-                    assert_eq!(dialog.input, "2026-03");
+            match state.dialogue {
+                Some(NavigationDialogue::Rename(dialogue)) => {
+                    assert_eq!(dialogue.source, source);
+                    assert_eq!(dialogue.input, "2026-03");
                     assert_eq!(
-                        dialog.error.as_deref(),
+                        dialogue.error.as_deref(),
                         Some("Month is already named 2026-03")
                     );
                 }
-                other => panic!("expected rename dialog, got {other:?}"),
+                other => panic!("expected rename dialogue, got {other:?}"),
             }
         }
         other => panic!("expected navigation route, got {other:?}"),
@@ -95,13 +95,13 @@ fn rename_dialog_keeps_unchanged_month_error_inline() {
 }
 
 #[test]
-fn rename_dialog_preserves_input_after_validation_error_and_allows_retry() {
+fn rename_dialogue_preserves_input_after_validation_error_and_allows_retry() {
     let (_temp, repo_root, repository, navigation, source) = seeded_navigation_app("2026-03");
     let mut app = App {
         repo_root,
         repository: Some(repository),
         route: Route::Navigation(NavigationState {
-            dialog: Some(NavigationDialog::Rename(RenameDialog {
+            dialogue: Some(NavigationDialogue::Rename(RenameDialogue {
                 source,
                 input: "2026-13".to_owned(),
                 error: None,
@@ -112,15 +112,15 @@ fn rename_dialog_preserves_input_after_validation_error_and_allows_retry() {
 
     app.handle_key(KeyEvent::from(KeyCode::Enter)).unwrap();
     match &app.route {
-        Route::Navigation(state) => match &state.dialog {
-            Some(NavigationDialog::Rename(dialog)) => {
-                assert_eq!(dialog.input, "2026-13");
+        Route::Navigation(state) => match &state.dialogue {
+            Some(NavigationDialogue::Rename(dialogue)) => {
+                assert_eq!(dialogue.input, "2026-13");
                 assert_eq!(
-                    dialog.error.as_deref(),
+                    dialogue.error.as_deref(),
                     Some("invalid month id `2026-13`, expected YYYY-MM")
                 );
             }
-            other => panic!("expected rename dialog, got {other:?}"),
+            other => panic!("expected rename dialogue, got {other:?}"),
         },
         other => panic!("expected navigation route, got {other:?}"),
     }
@@ -129,12 +129,12 @@ fn rename_dialog_preserves_input_after_validation_error_and_allows_retry() {
     app.handle_key(KeyEvent::from(KeyCode::Char('2'))).unwrap();
 
     match &app.route {
-        Route::Navigation(state) => match &state.dialog {
-            Some(NavigationDialog::Rename(dialog)) => {
-                assert_eq!(dialog.input, "2026-12");
-                assert_eq!(dialog.error, None);
+        Route::Navigation(state) => match &state.dialogue {
+            Some(NavigationDialogue::Rename(dialogue)) => {
+                assert_eq!(dialogue.input, "2026-12");
+                assert_eq!(dialogue.error, None);
             }
-            other => panic!("expected rename dialog, got {other:?}"),
+            other => panic!("expected rename dialogue, got {other:?}"),
         },
         other => panic!("expected navigation route, got {other:?}"),
     }
@@ -143,7 +143,7 @@ fn rename_dialog_preserves_input_after_validation_error_and_allows_retry() {
 
     match app.route {
         Route::Navigation(state) => {
-            assert!(state.dialog.is_none());
+            assert!(state.dialogue.is_none());
             assert_eq!(state.selected, 0);
             assert_eq!(
                 state.months[0].document.month,
@@ -155,7 +155,7 @@ fn rename_dialog_preserves_input_after_validation_error_and_allows_retry() {
 }
 
 #[test]
-fn rename_dialog_uses_blocking_failure_for_repository_faults() {
+fn rename_dialogue_uses_blocking_failure_for_repository_faults() {
     let (_temp, repo_root, repository, navigation, source) = seeded_navigation_app("2026-03");
     fs::remove_file(repo_root.join("months/2026-03.toml")).unwrap();
 
@@ -163,7 +163,7 @@ fn rename_dialog_uses_blocking_failure_for_repository_faults() {
         repo_root,
         repository: Some(repository),
         route: Route::Navigation(NavigationState {
-            dialog: Some(NavigationDialog::Rename(RenameDialog {
+            dialogue: Some(NavigationDialogue::Rename(RenameDialogue {
                 source,
                 input: "2026-04".to_owned(),
                 error: None,
@@ -184,13 +184,13 @@ fn rename_dialog_uses_blocking_failure_for_repository_faults() {
 }
 
 #[test]
-fn create_dialog_routes_duplicate_month_to_blocking_failure() {
+fn create_dialogue_routes_duplicate_month_to_blocking_failure() {
     let (_temp, repo_root, repository, navigation, month) = seeded_navigation_app("2026-03");
     let mut app = App {
         repo_root,
         repository: Some(repository),
         route: Route::Navigation(NavigationState {
-            dialog: Some(NavigationDialog::Create(CreateDialog {
+            dialogue: Some(NavigationDialogue::Create(CreateDialogue {
                 input: month.key(),
                 error: None,
             })),
@@ -215,7 +215,7 @@ fn create_dialog_routes_duplicate_month_to_blocking_failure() {
 }
 
 #[test]
-fn create_dialog_routes_repository_faults_to_blocking_failure() {
+fn create_dialogue_routes_repository_faults_to_blocking_failure() {
     let (_temp, repo_root, repository, navigation, _) = seeded_navigation_app("2026-03");
     fs::remove_dir_all(repo_root.join("months")).unwrap();
 
@@ -223,7 +223,7 @@ fn create_dialog_routes_repository_faults_to_blocking_failure() {
         repo_root,
         repository: Some(repository),
         route: Route::Navigation(NavigationState {
-            dialog: Some(NavigationDialog::Create(CreateDialog {
+            dialogue: Some(NavigationDialogue::Create(CreateDialogue {
                 input: "2026-04".to_owned(),
                 error: None,
             })),
@@ -260,7 +260,7 @@ fn rename_push_failure_retries_the_pending_push_boundary() {
         repo_root: repo_root.clone(),
         repository: Some(repository),
         route: Route::Navigation(NavigationState {
-            dialog: Some(NavigationDialog::Rename(RenameDialog {
+            dialogue: Some(NavigationDialogue::Rename(RenameDialogue {
                 source,
                 input: "2026-04".to_owned(),
                 error: None,
@@ -299,7 +299,7 @@ fn rename_push_failure_retries_the_pending_push_boundary() {
 
     match app.route {
         Route::Navigation(state) => {
-            assert!(state.dialog.is_none());
+            assert!(state.dialogue.is_none());
             assert_eq!(
                 state.months[0].document.month,
                 MonthId::parse("2026-04").unwrap()

@@ -107,24 +107,24 @@ pub fn parse_money_input(input: &str, allow_negative: bool) -> Result<Money, Bud
 
     // Ignore purely visual formatting so the parser can accept both pasted and
     // interactively edited values.
-    let sanitized: String = trimmed
+    let sanitised: String = trimmed
         .chars()
         .filter(|character| !matches!(character, '£' | ',' | ' ' | '_'))
         .collect();
 
-    if sanitized.is_empty() {
+    if sanitised.is_empty() {
         return Err(BudgetError::InvalidMoney(input.to_owned()));
     }
 
-    let (negative, digits) = if let Some(rest) = sanitized.strip_prefix('-') {
+    let (negative, digits) = if let Some(rest) = sanitised.strip_prefix('-') {
         if !allow_negative {
             return Err(BudgetError::InvalidMoney(input.to_owned()));
         }
         (true, rest)
-    } else if let Some(rest) = sanitized.strip_prefix('+') {
+    } else if let Some(rest) = sanitised.strip_prefix('+') {
         (false, rest)
     } else {
-        (false, sanitized.as_str())
+        (false, sanitised.as_str())
     };
 
     let mut parts = digits.split('.');

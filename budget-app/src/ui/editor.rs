@@ -7,8 +7,8 @@ use super::layout::{EditorLayoutProfile, PanelChrome, section_height};
 use super::theme::{Tone, UiTheme, section_tone, status_value_style, validation_tone};
 use super::widgets::{
     amount_cell_with_style, combined_focus_state, field_focus_state, focused_row_style, hint_lines,
-    labeled_row_cell, panel_block, section_block, section_focus_state, selected_field, status_line,
-    styled_value_cell_with_tone, value_for_field,
+    labelled_row_cell, panel_block, section_block, section_focus_state, selected_field,
+    status_line, styled_value_cell_with_tone, value_for_field,
 };
 use crate::state::{EditorState, FieldId, SectionId};
 
@@ -301,7 +301,7 @@ fn render_accounts(
         let field = FieldId::Account(row.id.clone());
         let focus = field_focus_state(state, &field);
         Row::new(vec![
-            labeled_row_cell(&row.label, focus),
+            labelled_row_cell(&row.label, focus),
             Cell::from(Span::styled(
                 match row.kind {
                     AccountKind::Asset => "+",
@@ -385,7 +385,7 @@ fn render_timing(
     let investment_focus = field_focus_state(state, &investment);
     let rows = vec![
         Row::new(vec![
-            labeled_row_cell("General spending over/under", correction_focus),
+            labelled_row_cell("General spending over/under", correction_focus),
             styled_value_cell_with_tone(
                 value_for_field(state, &correction, &state.document),
                 correction_focus,
@@ -403,7 +403,7 @@ fn render_timing(
         ])
         .style(focused_row_style(correction_focus, theme)),
         Row::new(vec![
-            labeled_row_cell("Investment not yet sent", investment_focus),
+            labelled_row_cell("Investment not yet sent", investment_focus),
             styled_value_cell_with_tone(
                 value_for_field(state, &investment, &state.document),
                 investment_focus,
@@ -461,7 +461,7 @@ fn render_earmarks(
         let field = FieldId::Earmark(row.id.clone());
         let focus = field_focus_state(state, &field);
         Row::new(vec![
-            labeled_row_cell(&row.label, focus),
+            labelled_row_cell(&row.label, focus),
             styled_value_cell_with_tone(
                 value_for_field(state, &field, &state.document),
                 focus,
@@ -524,7 +524,7 @@ fn render_pots(
             let change_focus = field_focus_state(state, &change);
             let row_focus = combined_focus_state(carried_focus, change_focus);
             Row::new(vec![
-                labeled_row_cell(&row.label, row_focus),
+                labelled_row_cell(&row.label, row_focus),
                 styled_value_cell_with_tone(
                     value_for_field(state, &carried, &state.document),
                     carried_focus,

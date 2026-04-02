@@ -23,14 +23,14 @@ Timestamp: 2026-04-02T11:23:25+01:00
 ### 1. High: create-month errors can escape the state machine instead of entering `BlockingFailure`
 
 - Files: `budget-app/src/app.rs:161`, `budget-app/src/app.rs:458`
-- `NavigationDialog::Create` returns `self.start_guided_creation(month)` directly.
+- `NavigationDialogue::Create` returns `self.start_guided_creation(month)` directly.
 - `start_guided_creation` uses `create_month_draft(month)?`, so duplicate-month and repository faults can bubble out of the input handler and unwind the TUI loop instead of being converted into explicit recovery state.
 - That conflicts with `docs/state-machine-lifecycle.md`, which requires repo-dependent failures to stop normal flow at the failed boundary.
 
 Recommendation:
-- Catch draft-creation errors at the dialog boundary.
+- Catch draft-creation errors at the dialogue boundary.
 - Route repository faults into `BlockingFailure`.
-- Keep only user-correctable input issues inline in the dialog.
+- Keep only user-correctable input issues inline in the dialogue.
 - Add regression coverage for "month already exists" and repository-failure creation paths.
 
 ### 2. High: rename/delete retry targets replay the mutation instead of retrying the failed boundary
@@ -97,13 +97,13 @@ Still aligned with the MVP:
 - Money is kept in integer minor units end to end.
 - Derived values are recomputed on load and treated as cache only.
 - The app remains file-based and inspectable.
-- Sync/save behavior is intentionally strict and blocking.
+- Sync/save behaviour is intentionally strict and blocking.
 - Guided creation order and main editing shape match the documented monthly workflow.
 
 Advice intentionally excluded:
 
 - No transaction tracking, bank sync, audit trail, automation, or daily-spend logic.
-- No recommendation to weaken blocking save/sync failures into best-effort background behavior.
+- No recommendation to weaken blocking save/sync failures into best-effort background behaviour.
 - No push toward a non-file-backed data model.
 
 ## Positive Notes

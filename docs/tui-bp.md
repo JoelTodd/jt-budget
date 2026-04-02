@@ -98,8 +98,8 @@ This keeps interaction legible in a terminal environment.
 ## 6. Visual design and theming
 
 - Define semantic style tokens.
-- Use color to communicate meaning.
-- Pair color with other visual cues.
+- Use colour to communicate meaning.
+- Pair colour with other visual cues.
 - Use text modifiers sparingly and consistently.
 - Theme for legibility across a range of terminal styles.
 
@@ -143,7 +143,7 @@ Use overlays for short focused tasks. Clear the background region first and make
 ## 8. Input conventions
 
 - Translate raw keys into semantic actions.
-- Keep keyboard behavior consistent across the app.
+- Keep keyboard behaviour consistent across the app.
 - Make destructive actions feel deliberate.
 - Use dedicated input widgets for real text entry.
 
@@ -182,7 +182,7 @@ Use motion to reinforce:
 ## 11. Resilience and edge cases
 
 - Design for narrow and awkward states.
-- Define fallback behavior explicitly.
+- Define fallback behaviour explicitly.
 - Keep the interface visually stable during change.
 
 Plan in advance:
@@ -200,7 +200,7 @@ Plan in advance:
 - Give custom widgets semantic inputs.
 
 Good candidates:
-- labeled value rows
+- labelled value rows
 - status pills
 - section headers
 - summary strips

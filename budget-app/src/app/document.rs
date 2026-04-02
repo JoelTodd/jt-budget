@@ -67,7 +67,7 @@ pub(super) fn is_month_id_character(character: char) -> bool {
     character.is_ascii_digit() || character == '-'
 }
 
-/// Parses and validates a rename target entered in the navigation dialog.
+/// Parses and validates a rename target entered in the navigation dialogue.
 pub(super) fn validate_rename_target(
     source: MonthId,
     input: &str,

@@ -18,12 +18,12 @@ pub enum Route {
     Shutdown,
 }
 
-/// State for the month list and its modal dialogs.
+/// State for the month list and its modal dialogues.
 #[derive(Clone, Debug)]
 pub struct NavigationState {
     pub months: Vec<MonthEntry>,
     pub selected: usize,
-    pub dialog: Option<NavigationDialog>,
+    pub dialogue: Option<NavigationDialogue>,
 }
 
 impl NavigationState {
@@ -31,7 +31,7 @@ impl NavigationState {
         Self {
             months,
             selected: 0,
-            dialog: None,
+            dialogue: None,
         }
     }
 
@@ -47,35 +47,35 @@ pub struct MonthEntry {
     pub calculated: CalculatedMonth,
 }
 
-/// Dialog state for creating a new month.
+/// Dialogue state for creating a new month.
 #[derive(Clone, Debug)]
-pub struct CreateDialog {
+pub struct CreateDialogue {
     pub input: String,
     pub error: Option<String>,
 }
 
-/// Dialog state for renaming an existing month.
+/// Dialogue state for renaming an existing month.
 #[derive(Clone, Debug)]
-pub struct RenameDialog {
+pub struct RenameDialogue {
     pub source: MonthId,
     pub input: String,
     pub error: Option<String>,
 }
 
-/// Dialog state for deleting a month after explicit confirmation.
+/// Dialogue state for deleting a month after explicit confirmation.
 #[derive(Clone, Debug)]
-pub struct DeleteDialog {
+pub struct DeleteDialogue {
     pub month: MonthId,
     pub confirmation: String,
     pub error: Option<String>,
 }
 
-/// Any modal dialog that can appear from the navigation route.
+/// Any modal dialogue that can appear from the navigation route.
 #[derive(Clone, Debug)]
-pub enum NavigationDialog {
-    Create(CreateDialog),
-    Rename(RenameDialog),
-    Delete(DeleteDialog),
+pub enum NavigationDialogue {
+    Create(CreateDialogue),
+    Rename(RenameDialogue),
+    Delete(DeleteDialogue),
 }
 
 /// State for the guided month-creation workflow.
@@ -143,7 +143,7 @@ pub enum PersistenceState {
     SaveFailed,
 }
 
-/// Remote synchronization state for the current editor or guided draft.
+/// Remote synchronisation state for the current editor or guided draft.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncState {
     SyncPending,

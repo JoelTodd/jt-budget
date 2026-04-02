@@ -42,7 +42,7 @@ It currently mixes:
 - mutation helpers
 - route-level tests
 
-That blurs the boundary between state transitions, side effects, and recovery behavior.
+That blurs the boundary between state transitions, side effects, and recovery behaviour.
 
 ### `ui.rs`
 
@@ -68,7 +68,7 @@ This is decomposition, not redesign.
 
 The goal is to:
 
-- preserve behavior
+- preserve behaviour
 - preserve the current repository and file model
 - preserve the explicit state-machine approach
 - reduce the scope of future changes
@@ -135,7 +135,7 @@ This cleanup is done only when all of the following are true:
 - app flow is no longer implemented in one large mixed-concern module
 - UI theme, layout, rendering, and test support are no longer implemented in one large mixed-concern module
 - each extracted module has one primary reason to change
-- visible behavior is unchanged across navigation, guided creation, editor flows, failure handling, and supported terminal sizes
+- visible behaviour is unchanged across navigation, guided creation, editor flows, failure handling, and supported terminal sizes
 - the existing implementation constraints listed above are still true
 - standard formatting, lint, test, and release-build checks pass
 - the docs still describe the implementation accurately

@@ -115,7 +115,7 @@ pub(super) fn navigation_route(config: &AppConfig) -> Route {
             calculated,
         }],
         selected: 0,
-        dialog: None,
+        dialogue: None,
     })
 }
 

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Domain and serialization failures for the budgeting model.
+/// Domain and serialisation failures for the budgeting model.
 #[derive(Debug, Error)]
 pub enum BudgetError {
     #[error("invalid month id `{0}`, expected YYYY-MM")]
@@ -23,8 +23,8 @@ pub enum BudgetError {
         carried_over: i64,
         monthly_change: i64,
     },
-    #[error("toml deserialization failed: {0}")]
-    TomlDeserialize(#[from] toml::de::Error),
-    #[error("toml serialization failed: {0}")]
-    TomlSerialize(#[from] toml::ser::Error),
+    #[error("toml deserialisation failed: {0}")]
+    TomlDeserialise(#[from] toml::de::Error),
+    #[error("toml serialisation failed: {0}")]
+    TomlSerialise(#[from] toml::ser::Error),
 }
