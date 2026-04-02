@@ -19,6 +19,7 @@ pub use state::{
     RenameDialog, RetryTarget, Route, SectionId, SyncState,
 };
 
+/// Parses CLI arguments and dispatches the selected command.
 pub fn run_cli() -> Result<()> {
     let cli = Cli::parse();
     run_command(cli.command)

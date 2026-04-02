@@ -1,3 +1,9 @@
+//! File-backed repository access with explicit git-based synchronization.
+//!
+//! The runtime depends on this layer to enforce strict sync semantics: normal
+//! operations may save locally first, but failures to pull or push are surfaced
+//! as blocking states rather than silently ignored.
+
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write;
@@ -30,7 +36,19 @@ pub struct LoadedMonth {
     pub calculated: CalculatedMonth,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SyncOutcome {
+    Synced,
+    PushFailed(String),
+}
+
 impl Repository {
+    /// Creates a new on-disk budget repository and bootstraps its git history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the target directory is not empty, required files
+    /// cannot be written, or git initialization fails.
     pub fn init(root: &Path, remote: Option<&str>) -> Result<()> {
         ensure!(
             !root.exists() || fs::read_dir(root)?.next().transpose()?.is_none(),
@@ -70,6 +88,13 @@ impl Repository {
         Ok(())
     }
 
+    /// Opens an existing repository, acquires the single-app lock, and performs
+    /// the initial sync gate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the repository is malformed, another app instance is
+    /// already holding the lock, or the initial pull check fails.
     pub fn open(root: &Path) -> Result<Self> {
         let root = root
             .canonicalize()
@@ -88,6 +113,8 @@ impl Repository {
             .truncate(false)
             .open(&lock_path)
             .with_context(|| format!("opening lock file `{}`", lock_path.display()))?;
+        // The TUI is intentionally single-writer so autosave and git operations
+        // never race from multiple local sessions.
         lock_handle
             .lock_exclusive()
             .with_context(|| format!("acquiring lock on `{}`", lock_path.display()))?;
@@ -112,18 +139,22 @@ impl Repository {
         Ok(repository)
     }
 
+    /// Returns the validated repository configuration.
     pub fn config(&self) -> &AppConfig {
         &self.config
     }
 
+    /// Returns the repository root on disk.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
+    /// Reports whether a configured `origin` enables pull/push synchronization.
     pub fn sync_enabled(&self) -> bool {
         self.sync_enabled
     }
 
+    /// Loads and recalculates all month documents in reverse chronological order.
     pub fn list_months(&self) -> Result<Vec<LoadedMonth>> {
         let mut months = Vec::new();
         for entry in fs::read_dir(&self.months_dir)
@@ -140,10 +171,17 @@ impl Repository {
         Ok(months)
     }
 
+    /// Loads a single month by its stable month identifier.
     pub fn load_month_by_id(&self, month: MonthId) -> Result<LoadedMonth> {
         self.load_month(&self.months_dir.join(month.file_name()))
     }
 
+    /// Builds a new draft month document without writing it yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the target month already exists or an earlier month
+    /// cannot be loaded while determining carry-forward balances.
     pub fn create_month_draft(&self, month: MonthId) -> Result<MonthDocument> {
         let path = self.months_dir.join(month.file_name());
         ensure!(!path.exists(), "month `{month}` already exists");
@@ -159,6 +197,7 @@ impl Repository {
         ))
     }
 
+    /// Persists a month, commits the change, and pushes it when sync is enabled.
     pub fn save_month(&self, document: &mut MonthDocument) -> Result<()> {
         let path = self.months_dir.join(document.month.file_name());
         document.stamp_updated_now();
@@ -166,7 +205,8 @@ impl Repository {
         self.commit_and_push_month(document.month)
     }
 
-    pub fn rename_month(&self, source: MonthId, target: MonthId) -> Result<()> {
+    /// Renames a month file, commits the local rename, and then attempts to push.
+    pub fn rename_month(&self, source: MonthId, target: MonthId) -> Result<SyncOutcome> {
         ensure!(
             source != target,
             "month `{source}` is already named `{target}`"
@@ -183,30 +223,35 @@ impl Repository {
         fs::remove_file(&source_path)
             .with_context(|| format!("removing old month file `{}`", source_path.display()))?;
 
-        self.commit_paths_and_push(
+        self.commit_paths(
             &[
                 PathBuf::from("months").join(source.file_name()),
                 PathBuf::from("months").join(target.file_name()),
             ],
             &format!("Rename budget month {source} to {target}"),
-        )
+        )?;
+        self.push_after_local_commit()
     }
 
-    pub fn delete_month(&self, month: MonthId) -> Result<()> {
+    /// Deletes a month file, commits the local deletion, and then attempts to push.
+    pub fn delete_month(&self, month: MonthId) -> Result<SyncOutcome> {
         let path = self.months_dir.join(month.file_name());
         ensure!(path.exists(), "month `{month}` does not exist");
         fs::remove_file(&path)
             .with_context(|| format!("removing month file `{}`", path.display()))?;
-        self.commit_paths_and_push(
+        self.commit_paths(
             &[PathBuf::from("months").join(month.file_name())],
             &format!("Delete budget month {month}"),
-        )
+        )?;
+        self.push_after_local_commit()
     }
 
-    pub fn retry_push_for_month(&self, month: MonthId) -> Result<()> {
-        self.commit_and_push_month(month)
+    /// Retries a push for changes that were already committed locally.
+    pub fn retry_pending_push(&self) -> Result<()> {
+        self.push_committed_changes()
     }
 
+    /// Performs the startup repository gate.
     pub fn pull_latest(&self) -> Result<()> {
         if !self.sync_enabled {
             info!(
@@ -237,10 +282,11 @@ impl Repository {
 
     fn commit_and_push_month(&self, month: MonthId) -> Result<()> {
         let relative = PathBuf::from("months").join(month.file_name());
-        self.commit_paths_and_push(&[relative], &format!("Update budget month {month}"))
+        self.commit_paths(&[relative], &format!("Update budget month {month}"))?;
+        self.push_committed_changes()
     }
 
-    fn commit_paths_and_push(&self, relative_paths: &[PathBuf], message: &str) -> Result<()> {
+    fn commit_paths(&self, relative_paths: &[PathBuf], message: &str) -> Result<()> {
         let relative_text = relative_paths
             .iter()
             .map(|path| {
@@ -267,6 +313,17 @@ impl Repository {
             run_git(&self.root, ["commit", "-m", message])
                 .context("committing repository changes")?;
         }
+        Ok(())
+    }
+
+    fn push_after_local_commit(&self) -> Result<SyncOutcome> {
+        match self.push_committed_changes() {
+            Ok(()) => Ok(SyncOutcome::Synced),
+            Err(error) => Ok(SyncOutcome::PushFailed(error.to_string())),
+        }
+    }
+
+    fn push_committed_changes(&self) -> Result<()> {
         if self.sync_enabled {
             run_git(&self.root, ["push"]).context("pushing repository changes")?;
         } else {
@@ -352,9 +409,18 @@ fn write_atomic(path: &Path, contents: &str) -> Result<()> {
         .with_context(|| format!("writing temp file for `{}`", path.display()))?;
     temp.flush()
         .with_context(|| format!("flushing temp file for `{}`", path.display()))?;
+    // Sync both the file and its directory so the rename is durable before we
+    // tell higher layers that autosave succeeded.
+    temp.as_file()
+        .sync_all()
+        .with_context(|| format!("syncing temp file for `{}`", path.display()))?;
     temp.persist(path)
         .map_err(|error| anyhow!(error.error))
         .with_context(|| format!("persisting `{}`", path.display()))?;
+    File::open(parent)
+        .with_context(|| format!("opening directory `{}` for sync", parent.display()))?
+        .sync_all()
+        .with_context(|| format!("syncing directory `{}`", parent.display()))?;
     Ok(())
 }
 
@@ -367,7 +433,7 @@ mod tests {
     use budget_core::{MonthId, calculate_month};
     use tempfile::tempdir;
 
-    use super::Repository;
+    use super::{Repository, SyncOutcome};
 
     #[test]
     fn init_repo_and_open_repo_gate() {
@@ -502,12 +568,13 @@ mod tests {
             .create_month_draft(MonthId::parse("2026-03").unwrap())
             .unwrap();
         repository.save_month(&mut month).unwrap();
-        repository
+        let outcome = repository
             .rename_month(
                 MonthId::parse("2026-03").unwrap(),
                 MonthId::parse("2026-04").unwrap(),
             )
             .unwrap();
+        assert_eq!(outcome, SyncOutcome::Synced);
 
         assert!(!repo_path.join("months/2026-03.toml").exists());
         let renamed_path = repo_path.join("months/2026-04.toml");
@@ -529,12 +596,97 @@ mod tests {
             .create_month_draft(MonthId::parse("2026-03").unwrap())
             .unwrap();
         repository.save_month(&mut month).unwrap();
-        repository
+        let outcome = repository
             .delete_month(MonthId::parse("2026-03").unwrap())
             .unwrap();
+        assert_eq!(outcome, SyncOutcome::Synced);
 
         assert!(!repo_path.join("months/2026-03.toml").exists());
         assert!(repository.list_months().unwrap().is_empty());
+        let log = git_capture(&repo_path, &["log", "--oneline", "--max-count", "1"]);
+        assert!(log.contains("Delete budget month 2026-03"));
+    }
+
+    #[test]
+    fn rename_month_keeps_local_commit_when_push_fails() {
+        let temp = tempdir().unwrap();
+        let remote = temp.path().join("remote.git");
+        git(temp.path(), &["init", "--bare", remote.to_str().unwrap()]);
+
+        let repo_path = temp.path().join("budget");
+        Repository::init(&repo_path, Some(remote.to_str().unwrap())).unwrap();
+
+        let repository = Repository::open(&repo_path).unwrap();
+        let mut month = repository
+            .create_month_draft(MonthId::parse("2026-03").unwrap())
+            .unwrap();
+        repository.save_month(&mut month).unwrap();
+
+        git(
+            &repo_path,
+            &[
+                "config",
+                "remote.origin.url",
+                "/definitely/missing/repo.git",
+            ],
+        );
+
+        let outcome = repository
+            .rename_month(
+                MonthId::parse("2026-03").unwrap(),
+                MonthId::parse("2026-04").unwrap(),
+            )
+            .unwrap();
+
+        match outcome {
+            SyncOutcome::PushFailed(message) => {
+                assert!(message.contains("pushing repository changes"));
+            }
+            other => panic!("expected push failure, got {other:?}"),
+        }
+
+        assert!(!repo_path.join("months/2026-03.toml").exists());
+        assert!(repo_path.join("months/2026-04.toml").exists());
+        let log = git_capture(&repo_path, &["log", "--oneline", "--max-count", "1"]);
+        assert!(log.contains("Rename budget month 2026-03 to 2026-04"));
+    }
+
+    #[test]
+    fn delete_month_keeps_local_commit_when_push_fails() {
+        let temp = tempdir().unwrap();
+        let remote = temp.path().join("remote.git");
+        git(temp.path(), &["init", "--bare", remote.to_str().unwrap()]);
+
+        let repo_path = temp.path().join("budget");
+        Repository::init(&repo_path, Some(remote.to_str().unwrap())).unwrap();
+
+        let repository = Repository::open(&repo_path).unwrap();
+        let mut month = repository
+            .create_month_draft(MonthId::parse("2026-03").unwrap())
+            .unwrap();
+        repository.save_month(&mut month).unwrap();
+
+        git(
+            &repo_path,
+            &[
+                "config",
+                "remote.origin.url",
+                "/definitely/missing/repo.git",
+            ],
+        );
+
+        let outcome = repository
+            .delete_month(MonthId::parse("2026-03").unwrap())
+            .unwrap();
+
+        match outcome {
+            SyncOutcome::PushFailed(message) => {
+                assert!(message.contains("pushing repository changes"));
+            }
+            other => panic!("expected push failure, got {other:?}"),
+        }
+
+        assert!(!repo_path.join("months/2026-03.toml").exists());
         let log = git_capture(&repo_path, &["log", "--oneline", "--max-count", "1"]);
         assert!(log.contains("Delete budget month 2026-03"));
     }

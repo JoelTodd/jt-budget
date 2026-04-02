@@ -16,22 +16,27 @@ pub struct Money(i64);
 impl Money {
     pub const ZERO: Self = Self(0);
 
+    /// Creates a monetary amount from integer minor units.
     pub const fn from_minor(minor: i64) -> Self {
         Self(minor)
     }
 
+    /// Returns the raw integer minor units backing this amount.
     pub const fn minor(self) -> i64 {
         self.0
     }
 
+    /// Reports whether the amount is greater than or equal to zero.
     pub const fn is_non_negative(self) -> bool {
         self.0 >= 0
     }
 
+    /// Returns the absolute value while preserving the minor-unit invariant.
     pub const fn abs(self) -> Self {
         Self(self.0.abs())
     }
 
+    /// Formats the amount for terminal display.
     pub fn format(self) -> String {
         format_minor_units(self.0)
     }
@@ -86,12 +91,22 @@ impl fmt::Display for Money {
 }
 
 /// Parse a terminal-edited money field into integer minor units.
+///
+/// The parser accepts the editable forms produced by the TUI, including a
+/// leading `£`, thousands separators, and an optional decimal point.
+///
+/// # Errors
+///
+/// Returns [`BudgetError::InvalidMoney`] when the input is empty, malformed, or
+/// negative when the field does not allow negative values.
 pub fn parse_money_input(input: &str, allow_negative: bool) -> Result<Money, BudgetError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Err(BudgetError::InvalidMoney(input.to_owned()));
     }
 
+    // Ignore purely visual formatting so the parser can accept both pasted and
+    // interactively edited values.
     let sanitized: String = trimmed
         .chars()
         .filter(|character| !matches!(character, '£' | ',' | ' ' | '_'))

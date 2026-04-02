@@ -1,8 +1,14 @@
+//! UI-facing state types for the TUI state machine.
+//!
+//! These structures are intentionally plain data so the runtime and renderer
+//! can exchange route state without hidden side effects.
+
 use budget_core::{
     AppConfig, BudgetError, CalculatedMonth, Money, MonthDocument, MonthId, format_minor_units,
     parse_money_input,
 };
 
+/// Top-level application route.
 #[derive(Clone, Debug)]
 pub enum Route {
     Navigation(NavigationState),
@@ -12,6 +18,7 @@ pub enum Route {
     Shutdown,
 }
 
+/// State for the month list and its modal dialogs.
 #[derive(Clone, Debug)]
 pub struct NavigationState {
     pub months: Vec<MonthEntry>,
@@ -33,18 +40,21 @@ impl NavigationState {
     }
 }
 
+/// Navigation entry containing both editable and derived month data.
 #[derive(Clone, Debug)]
 pub struct MonthEntry {
     pub document: MonthDocument,
     pub calculated: CalculatedMonth,
 }
 
+/// Dialog state for creating a new month.
 #[derive(Clone, Debug)]
 pub struct CreateDialog {
     pub input: String,
     pub error: Option<String>,
 }
 
+/// Dialog state for renaming an existing month.
 #[derive(Clone, Debug)]
 pub struct RenameDialog {
     pub source: MonthId,
@@ -52,6 +62,7 @@ pub struct RenameDialog {
     pub error: Option<String>,
 }
 
+/// Dialog state for deleting a month after explicit confirmation.
 #[derive(Clone, Debug)]
 pub struct DeleteDialog {
     pub month: MonthId,
@@ -59,6 +70,7 @@ pub struct DeleteDialog {
     pub error: Option<String>,
 }
 
+/// Any modal dialog that can appear from the navigation route.
 #[derive(Clone, Debug)]
 pub enum NavigationDialog {
     Create(CreateDialog),
@@ -66,6 +78,7 @@ pub enum NavigationDialog {
     Delete(DeleteDialog),
 }
 
+/// State for the guided month-creation workflow.
 #[derive(Clone, Debug)]
 pub struct GuidedCreationState {
     pub document: MonthDocument,
@@ -78,6 +91,7 @@ pub struct GuidedCreationState {
     pub sync: SyncState,
 }
 
+/// State for the full monthly editor.
 #[derive(Clone, Debug)]
 pub struct EditorState {
     pub document: MonthDocument,
@@ -91,6 +105,7 @@ pub struct EditorState {
     pub sync: SyncState,
 }
 
+/// Route state for failures that must block user progress until retried or quit.
 #[derive(Clone, Debug)]
 pub struct FailureState {
     pub title: String,
@@ -98,23 +113,28 @@ pub struct FailureState {
     pub retry: RetryTarget,
 }
 
+/// Operation that should be retried from the blocking failure screen.
 #[derive(Clone, Debug)]
 pub enum RetryTarget {
     RepositoryGate,
+    CreateMonth(MonthId),
     CreateDraft(GuidedCreationState),
     GuidedSave(GuidedCreationState),
     EditorSave(EditorState),
     OpenMonth(MonthId),
     RenameMonth { source: MonthId, target: MonthId },
     DeleteMonth(MonthId),
+    PushNavigation(Option<MonthId>),
 }
 
+/// Whether the monthly sheet is navigating fields or editing one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InteractionState {
     SheetIdle,
     FieldEditing,
 }
 
+/// Local persistence state for the current editor or guided draft.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PersistenceState {
     Clean,
@@ -123,6 +143,7 @@ pub enum PersistenceState {
     SaveFailed,
 }
 
+/// Remote synchronization state for the current editor or guided draft.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncState {
     SyncPending,
@@ -131,6 +152,7 @@ pub enum SyncState {
     SyncFailed,
 }
 
+/// Stable identifier for an editable field in guided creation or the editor.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FieldId {
     Account(String),
@@ -142,6 +164,7 @@ pub enum FieldId {
 }
 
 impl FieldId {
+    /// Returns the guided-creation field order defined by the MVP workflow.
     pub fn guided_steps(config: &AppConfig) -> Vec<Self> {
         let mut steps = Vec::new();
         for account in &config.accounts {
@@ -161,6 +184,7 @@ impl FieldId {
         steps
     }
 
+    /// Returns the editor traversal order used by the monthly sheet.
     pub fn editor_fields(config: &AppConfig) -> Vec<Self> {
         let mut fields = Vec::new();
         for account in &config.accounts {
@@ -178,6 +202,7 @@ impl FieldId {
         fields
     }
 
+    /// Reports whether the field accepts negative monetary values.
     pub fn allows_negative(&self) -> bool {
         matches!(
             self,
@@ -185,6 +210,7 @@ impl FieldId {
         )
     }
 
+    /// Returns the user-facing label for the field.
     pub fn label(&self, config: &AppConfig) -> String {
         match self {
             Self::Account(id) => config
@@ -208,6 +234,7 @@ impl FieldId {
         }
     }
 
+    /// Reads the current field value from the editable month document.
     pub fn current_value(&self, document: &MonthDocument) -> Money {
         match self {
             Self::Account(id) => Money::from_minor(*document.accounts.get(id).unwrap_or(&0)),
@@ -239,10 +266,12 @@ impl FieldId {
         }
     }
 
+    /// Formats the current field value for UI display.
     pub fn current_value_text(&self, document: &MonthDocument) -> String {
         format_minor_units(self.current_value(document).minor())
     }
 
+    /// Returns the editor section that owns this field.
     pub fn section(&self) -> SectionId {
         match self {
             Self::Account(_) => SectionId::Accounts,
@@ -255,6 +284,7 @@ impl FieldId {
     }
 }
 
+/// Top-level sections visible in the monthly sheet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SectionId {
     Accounts,
@@ -271,6 +301,7 @@ impl SectionId {
         Self::SavingsPots,
     ];
 
+    /// Full section title for boxed layouts.
     pub fn title(self) -> &'static str {
         match self {
             Self::Accounts => "Accounts",
@@ -280,6 +311,7 @@ impl SectionId {
         }
     }
 
+    /// Shortened section title for compact tab layouts.
     pub fn compact_title(self) -> &'static str {
         match self {
             Self::Accounts => "Accounts",
@@ -290,6 +322,7 @@ impl SectionId {
     }
 }
 
+/// Editable money buffer used by guided creation and the monthly sheet.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MoneyInput {
     base_minor: i64,
@@ -306,10 +339,12 @@ impl MoneyInput {
         }
     }
 
+    /// Starts editing from a field's current persisted value.
     pub fn from_field(field: &FieldId, document: &MonthDocument) -> Self {
         Self::from_value(field.current_value(document), field.allows_negative())
     }
 
+    /// Applies a single terminal keypress to the editable buffer.
     pub fn push(&mut self, character: char) {
         match character {
             '£' | '+' => {}
@@ -352,6 +387,7 @@ impl MoneyInput {
         }
     }
 
+    /// Deletes one character from the editable buffer.
     pub fn backspace(&mut self) {
         if self.edited_text.is_none() {
             let mut text = editable_text_from_minor(self.base_minor);
@@ -365,6 +401,7 @@ impl MoneyInput {
         }
     }
 
+    /// Returns the display form shown in the UI, including the currency prefix.
     pub fn display_text(&self) -> String {
         match &self.edited_text {
             None => format_minor_units(self.base_minor),
@@ -372,6 +409,12 @@ impl MoneyInput {
         }
     }
 
+    /// Converts the current buffer into a committed money value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetError::InvalidMoney`] when the current edited text does
+    /// not form a complete amount.
     pub fn commit_value(&self) -> Result<Money, BudgetError> {
         match self.edited_text.as_deref() {
             None => Ok(Money::from_minor(self.base_minor)),
@@ -381,6 +424,7 @@ impl MoneyInput {
         }
     }
 
+    /// Reports whether the user has diverged from the original field value.
     pub fn is_edited(&self) -> bool {
         self.edited_text.is_some()
     }

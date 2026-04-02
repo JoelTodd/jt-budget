@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use time::{Month, OffsetDateTime};
+use time::OffsetDateTime;
 
 use crate::config::{AccountConfig, AccountKind, AppConfig};
 use crate::error::BudgetError;
@@ -11,11 +11,17 @@ use crate::money::Money;
 /// Year-month identifier used for month files and UI labels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MonthId {
-    pub year: i32,
-    pub month: u8,
+    year: i32,
+    month: u8,
 }
 
 impl MonthId {
+    /// Parses a `YYYY-MM` month identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetError::InvalidMonthId`] when the input does not match
+    /// the expected shape or refers to an out-of-range month.
     pub fn parse(input: &str) -> Result<Self, BudgetError> {
         let (year, month) = input
             .split_once('-')
@@ -29,6 +35,7 @@ impl MonthId {
         Self::new(year, month).ok_or_else(|| BudgetError::InvalidMonthId(input.to_owned()))
     }
 
+    /// Builds a validated month identifier from numeric components.
     pub fn new(year: i32, month: u8) -> Option<Self> {
         if (1..=12).contains(&month) {
             Some(Self { year, month })
@@ -37,17 +44,45 @@ impl MonthId {
         }
     }
 
+    /// Returns the calendar year component.
+    pub const fn year(self) -> i32 {
+        self.year
+    }
+
+    /// Returns the calendar month component in the range `1..=12`.
+    pub const fn month(self) -> u8 {
+        self.month
+    }
+
+    /// Returns the repository filename for this month document.
     pub fn file_name(self) -> String {
-        format!("{:04}-{:02}.toml", self.year, self.month)
+        format!("{:04}-{:02}.toml", self.year(), self.month())
     }
 
+    /// Returns the stable `YYYY-MM` key used throughout the app.
     pub fn key(self) -> String {
-        format!("{:04}-{:02}", self.year, self.month)
+        format!("{:04}-{:02}", self.year(), self.month())
     }
 
+    /// Returns the human-readable label shown in the UI.
     pub fn display_label(self) -> String {
-        let month = Month::try_from(self.month).expect("validated month id");
-        format!("{month} {}", self.year)
+        const MONTH_NAMES: [&str; 12] = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ];
+
+        let month_index = usize::from(self.month() - 1);
+        format!("{} {}", MONTH_NAMES[month_index], self.year())
     }
 }
 
@@ -95,6 +130,11 @@ pub struct MonthDocument {
 }
 
 impl MonthDocument {
+    /// Creates a new editable draft for the requested month.
+    ///
+    /// Accounts start at zero, next-month earmarks start from configuration
+    /// defaults, and savings pots carry forward the prior month's final
+    /// balances when available.
     pub fn new_draft(
         month: MonthId,
         config: &AppConfig,
@@ -114,6 +154,9 @@ impl MonthDocument {
             .savings_pots
             .iter()
             .map(|pot| {
+                // Carry forward the last known final balance so the user
+                // confirms real-world pot changes instead of retyping
+                // everything from scratch.
                 let carried_over = previous
                     .and_then(|month| month.pot_rows.iter().find(|row| row.id == pot.id))
                     .map(|row| row.final_balance.minor())
@@ -139,6 +182,7 @@ impl MonthDocument {
         }
     }
 
+    /// Updates the document timestamps to the current UTC instant.
     pub fn stamp_updated_now(&mut self) {
         let now = OffsetDateTime::now_utc();
         let text = now
@@ -150,6 +194,15 @@ impl MonthDocument {
         self.meta.updated_at = Some(text);
     }
 
+    /// Serializes the document with a freshly recomputed derived cache.
+    ///
+    /// The cache exists only as an inspectable convenience in the repository;
+    /// callers must still recompute derived values from editable state.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetError`] if recalculation fails or the document cannot be
+    /// serialized to TOML.
     pub fn to_pretty_toml(&self, config: &AppConfig) -> Result<String, BudgetError> {
         let calculated = calculate_month(config, self)?;
         let mut persisted = self.clone();
@@ -158,24 +211,28 @@ impl MonthDocument {
     }
 }
 
+/// Raw user-entered timing adjustments.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimingAdjustments {
     pub investment_not_yet_sent_raw: i64,
     pub previous_month_spending_correction_raw: i64,
 }
 
+/// Persisted state for a single savings pot row.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavingsPotState {
     pub carried_over: i64,
     pub monthly_change: i64,
 }
 
+/// Metadata stored alongside the editable month data.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MonthMeta {
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
 
+/// Convenience cache persisted for humans inspecting the repository.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DerivedCache {
     pub accounts_subtotal_minor: i64,
@@ -190,6 +247,7 @@ pub struct DerivedCache {
     pub is_valid: bool,
 }
 
+/// Fully recomputed view of a persisted month document.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CalculatedMonth {
     pub month: MonthId,
@@ -202,6 +260,7 @@ pub struct CalculatedMonth {
 }
 
 impl CalculatedMonth {
+    /// Builds the inspectable derived cache written back into month files.
     pub fn cache(&self) -> DerivedCache {
         DerivedCache {
             accounts_subtotal_minor: self.totals.accounts_subtotal.minor(),
@@ -217,6 +276,7 @@ impl CalculatedMonth {
         }
     }
 
+    /// Returns grouped summary data for compact UI surfaces.
     pub fn summary_groups(&self) -> Vec<SummaryGroup> {
         vec![
             SummaryGroup {
@@ -286,6 +346,7 @@ impl CalculatedMonth {
     }
 }
 
+/// Calculated account row with both raw and sign-normalised values.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountRow {
     pub id: String,
@@ -295,6 +356,7 @@ pub struct AccountRow {
     pub normalised_balance: Money,
 }
 
+/// Derived timing-adjustment values used by the UI and validation logic.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimingCalculation {
     pub investment_not_yet_sent_raw: Money,
@@ -304,6 +366,7 @@ pub struct TimingCalculation {
     pub subtotal: Money,
 }
 
+/// Calculated next-month earmark row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EarmarkRow {
     pub id: String,
@@ -311,6 +374,7 @@ pub struct EarmarkRow {
     pub amount: Money,
 }
 
+/// Calculated savings-pot row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PotRow {
     pub id: String,
@@ -320,6 +384,7 @@ pub struct PotRow {
     pub final_balance: Money,
 }
 
+/// Aggregated totals that drive summary panels and validation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Totals {
     pub accounts_subtotal: Money,
@@ -332,6 +397,7 @@ pub struct Totals {
     pub total_allocated: Money,
 }
 
+/// Final balancing result for a month.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidationState {
     pub tolerance: Money,
@@ -339,23 +405,34 @@ pub struct ValidationState {
     pub is_valid: bool,
 }
 
+/// Group of summary items shown in compact navigation surfaces.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SummaryGroup {
     pub title: String,
     pub items: Vec<SummaryItem>,
 }
 
+/// Single line item within a [`SummaryGroup`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SummaryItem {
     pub label: String,
     pub value: Money,
 }
 
+/// Recomputes all derived values for a month document.
+///
+/// # Errors
+///
+/// Returns [`BudgetError`] when the configuration is invalid, required entries
+/// are missing, unexpected keys are present, or user-entered values break a
+/// domain invariant.
 pub fn calculate_month(
     config: &AppConfig,
     document: &MonthDocument,
 ) -> Result<CalculatedMonth, BudgetError> {
     config.validate()?;
+    // Keep derived values trustworthy by validating that the persisted document
+    // matches the configured set of editable fields exactly.
     verify_expected_keys(
         "accounts",
         document.accounts.keys().cloned().collect(),

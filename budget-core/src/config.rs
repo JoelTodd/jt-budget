@@ -13,6 +13,13 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// Validates that the persisted repository configuration matches the MVP's
+    /// structural invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetError`] when identifiers collide, required labels are
+    /// blank, or values that must remain non-negative violate that contract.
     pub fn validate(&self) -> Result<(), BudgetError> {
         validate_unique_ids(self.accounts.iter().map(|account| account.id.as_str()))?;
         validate_unique_ids(self.savings_pots.iter().map(|pot| pot.id.as_str()))?;
@@ -35,6 +42,7 @@ impl AppConfig {
         Ok(())
     }
 
+    /// Returns the default configuration baked into the MVP brief.
     pub fn default_mvp() -> Self {
         Self {
             validation_tolerance_minor: 100,
@@ -56,19 +64,23 @@ impl AppConfig {
         }
     }
 
+    /// Looks up an account definition by its stable identifier.
     pub fn account(&self, id: &str) -> Option<&AccountConfig> {
         self.accounts.iter().find(|account| account.id == id)
     }
 
+    /// Looks up a savings pot definition by its stable identifier.
     pub fn pot(&self, id: &str) -> Option<&SavingsPotConfig> {
         self.savings_pots.iter().find(|pot| pot.id == id)
     }
 
+    /// Looks up a next-month earmark definition by its stable identifier.
     pub fn earmark(&self, id: &str) -> Option<&EarmarkConfig> {
         self.next_month_earmarks.iter().find(|item| item.id == id)
     }
 }
 
+/// Defines an editable account row and how its sign should be interpreted.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountConfig {
     pub id: String,
@@ -93,6 +105,8 @@ impl AccountConfig {
         }
     }
 
+    /// Converts the user's always-positive entry into the signed value used by
+    /// the calculation engine.
     pub fn apply_sign(&self, raw_balance_minor: i64) -> Money {
         match self.kind {
             AccountKind::Asset => Money::from_minor(raw_balance_minor),
@@ -100,6 +114,7 @@ impl AccountConfig {
         }
     }
 
+    /// Returns the sign hint shown in the UI next to this account.
     pub fn sign_cue(&self) -> &'static str {
         match self.kind {
             AccountKind::Asset => "+",
@@ -108,6 +123,7 @@ impl AccountConfig {
     }
 }
 
+/// Determines whether an account increases or reduces net position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AccountKind {
@@ -115,6 +131,7 @@ pub enum AccountKind {
     Liability,
 }
 
+/// Static configuration for a named savings pot.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavingsPotConfig {
     pub id: String,
@@ -132,6 +149,7 @@ impl SavingsPotConfig {
     }
 }
 
+/// Static configuration for a next-month earmark.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EarmarkConfig {
     pub id: String,
