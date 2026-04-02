@@ -410,6 +410,9 @@ mod tests {
         let repo = temp.path().join("budget");
         Repository::init(&repo, None).unwrap();
 
+        let config_text = fs::read_to_string(repo.join("config.toml")).unwrap();
+        assert!(!config_text.contains("[ui.base24]"));
+
         let opened = Repository::open(&repo).unwrap();
         assert!(!opened.sync_enabled());
         assert!(opened.root().join("config.toml").exists());

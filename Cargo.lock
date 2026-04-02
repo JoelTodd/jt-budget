@@ -566,6 +566,7 @@ dependencies = [
  "fs4",
  "insta",
  "ratatui",
+ "serde",
  "tempfile",
  "time",
  "toml",

@@ -187,4 +187,35 @@ mod tests {
             13_000
         );
     }
+
+    #[test]
+    fn config_ignores_legacy_ui_theme_section() {
+        let config: AppConfig = toml::from_str(
+            r##"
+validation_tolerance_minor = 100
+
+[[accounts]]
+id = "current"
+label = "Current"
+kind = "asset"
+
+[[savings_pots]]
+id = "rainy_day"
+label = "Rainy day"
+default_monthly_change_minor = 5000
+
+[[next_month_earmarks]]
+id = "groceries"
+label = "Groceries"
+default_amount_minor = 15000
+
+[ui.base24]
+base00 = "#262626"
+"##,
+        )
+        .unwrap();
+
+        assert_eq!(config.validation_tolerance_minor, 100);
+        assert_eq!(config.accounts.len(), 1);
+    }
 }

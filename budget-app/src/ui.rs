@@ -1,9 +1,11 @@
 use std::path::Path;
+use std::sync::OnceLock;
 
 use budget_core::{AccountKind, AppConfig, CalculatedMonth, MonthDocument};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap};
+use serde::Deserialize;
 
 use crate::state::{
     DeleteDialog, EditorState, FailureState, FieldId, GuidedCreationState, InteractionState,
@@ -28,112 +30,203 @@ enum Tone {
 
 type RgbTriplet = (u8, u8, u8);
 
-const BASE00_RGB: RgbTriplet = (0x26, 0x26, 0x26);
-const BASE03_RGB: RgbTriplet = (0x79, 0x79, 0x79);
-const BASE04_RGB: RgbTriplet = (0xa0, 0xa0, 0x9f);
-const BASE05_RGB: RgbTriplet = (0xc7, 0xc7, 0xc5);
-const BASE06_RGB: RgbTriplet = (0xee, 0xee, 0xec);
-const BASE08_RGB: RgbTriplet = (0xd2, 0x51, 0x51);
-const BASE09_RGB: RgbTriplet = (0xff, 0xc6, 0x6d);
-const BASE0A_RGB: RgbTriplet = (0x8a, 0xb7, 0xd9);
-const BASE0B_RGB: RgbTriplet = (0xa5, 0xc2, 0x61);
-const BASE0C_RGB: RgbTriplet = (0xbe, 0xd6, 0xff);
-const BASE0D_RGB: RgbTriplet = (0x6c, 0x99, 0xbb);
-const BASE0E_RGB: RgbTriplet = (0xd1, 0x97, 0xd9);
+#[derive(Clone, Debug, Deserialize)]
+struct ThemeConfig {
+    base24: Base24PaletteConfig,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct Base24PaletteConfig {
+    base00: String,
+    base01: String,
+    base02: String,
+    base03: String,
+    base04: String,
+    base05: String,
+    base06: String,
+    base07: String,
+    base08: String,
+    base09: String,
+    #[serde(rename = "base0A")]
+    base0_a: String,
+    #[serde(rename = "base0B")]
+    base0_b: String,
+    #[serde(rename = "base0C")]
+    base0_c: String,
+    #[serde(rename = "base0D")]
+    base0_d: String,
+    #[serde(rename = "base0E")]
+    base0_e: String,
+    #[serde(rename = "base0F")]
+    base0_f: String,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct UiTheme {
+    base00: Color,
+    base03: Color,
+    base04: Color,
+    base05: Color,
+    base06: Color,
+    base08: Color,
+    base09: Color,
+    base0a: Color,
+    base0b: Color,
+    base0c: Color,
+    base0d: Color,
+    base0e: Color,
+}
 
 fn rgb(color: RgbTriplet) -> Color {
     Color::Rgb(color.0, color.1, color.2)
 }
 
-fn base00() -> Color {
-    rgb(BASE00_RGB)
-}
+impl UiTheme {
+    fn project_default() -> &'static Self {
+        static THEME: OnceLock<UiTheme> = OnceLock::new();
+        THEME.get_or_init(|| {
+            let config: ThemeConfig =
+                toml::from_str(include_str!("../theme.toml")).expect("project theme.toml is valid");
+            config
+                .base24
+                .validate()
+                .expect("project theme.toml passes base24 validation");
+            Self::from_palette(&config.base24)
+        })
+    }
 
-fn base03() -> Color {
-    rgb(BASE03_RGB)
-}
+    fn from_palette(palette: &Base24PaletteConfig) -> Self {
+        Self {
+            base00: rgb(parse_hex_triplet(&palette.base00)),
+            base03: rgb(parse_hex_triplet(&palette.base03)),
+            base04: rgb(parse_hex_triplet(&palette.base04)),
+            base05: rgb(parse_hex_triplet(&palette.base05)),
+            base06: rgb(parse_hex_triplet(&palette.base06)),
+            base08: rgb(parse_hex_triplet(&palette.base08)),
+            base09: rgb(parse_hex_triplet(&palette.base09)),
+            base0a: rgb(parse_hex_triplet(&palette.base0_a)),
+            base0b: rgb(parse_hex_triplet(&palette.base0_b)),
+            base0c: rgb(parse_hex_triplet(&palette.base0_c)),
+            base0d: rgb(parse_hex_triplet(&palette.base0_d)),
+            base0e: rgb(parse_hex_triplet(&palette.base0_e)),
+        }
+    }
 
-fn base04() -> Color {
-    rgb(BASE04_RGB)
-}
+    fn tone_color(&self, tone: Tone) -> Color {
+        match tone {
+            Tone::Navigation => self.base0d,
+            Tone::Guided => self.base0a,
+            Tone::Summary => self.base0c,
+            Tone::Status => self.base0a,
+            Tone::Liability => self.base0e,
+            Tone::Accounts => self.base0d,
+            Tone::Timing => self.base09,
+            Tone::Earmarks => self.base0e,
+            Tone::Pots => self.base0b,
+            Tone::Danger => self.base08,
+            Tone::Success => self.base0b,
+            Tone::Warning => self.base09,
+        }
+    }
 
-fn base05() -> Color {
-    rgb(BASE05_RGB)
-}
+    fn panel_surface_color(&self, _tone: Tone) -> Color {
+        self.base00
+    }
 
-fn base06() -> Color {
-    rgb(BASE06_RGB)
-}
+    fn app_style(&self) -> Style {
+        Style::default().bg(self.base00).fg(self.base05)
+    }
 
-fn tone_rgb(tone: Tone) -> RgbTriplet {
-    match tone {
-        Tone::Navigation => BASE0D_RGB,
-        Tone::Guided => BASE0A_RGB,
-        Tone::Summary => BASE0C_RGB,
-        Tone::Status => BASE0A_RGB,
-        Tone::Liability => BASE0E_RGB,
-        Tone::Accounts => BASE0D_RGB,
-        Tone::Timing => BASE09_RGB,
-        Tone::Earmarks => BASE0E_RGB,
-        Tone::Pots => BASE0B_RGB,
-        Tone::Danger => BASE08_RGB,
-        Tone::Success => BASE0B_RGB,
-        Tone::Warning => BASE09_RGB,
+    fn toned_panel_style(&self, tone: Tone) -> Style {
+        Style::default()
+            .bg(self.panel_surface_color(tone))
+            .fg(self.base05)
+    }
+
+    fn muted_style(&self) -> Style {
+        Style::default().fg(self.base04)
+    }
+
+    fn subtle_style(&self) -> Style {
+        Style::default().fg(self.base03)
+    }
+
+    fn bright_style(&self) -> Style {
+        Style::default().fg(self.base06)
+    }
+
+    fn tone_style(&self, tone: Tone) -> Style {
+        Style::default().fg(self.tone_color(tone))
+    }
+
+    fn emphasized_tone_style(&self, tone: Tone) -> Style {
+        self.tone_style(tone).add_modifier(Modifier::BOLD)
+    }
+
+    fn panel_border_style(&self, tone: Tone) -> Style {
+        self.tone_style(tone)
+    }
+
+    fn selected_style(&self) -> Style {
+        Style::default()
+            .bg(self.base00)
+            .fg(self.base06)
+            .add_modifier(Modifier::BOLD)
+    }
+
+    fn editing_style(&self) -> Style {
+        Style::default()
+            .bg(self.base00)
+            .fg(self.tone_color(Tone::Warning))
+            .add_modifier(Modifier::BOLD)
     }
 }
 
-fn tone_color(tone: Tone) -> Color {
-    rgb(tone_rgb(tone))
+impl Base24PaletteConfig {
+    fn validate(&self) -> Result<(), String> {
+        for (field, value) in [
+            ("base24.base00", self.base00.as_str()),
+            ("base24.base01", self.base01.as_str()),
+            ("base24.base02", self.base02.as_str()),
+            ("base24.base03", self.base03.as_str()),
+            ("base24.base04", self.base04.as_str()),
+            ("base24.base05", self.base05.as_str()),
+            ("base24.base06", self.base06.as_str()),
+            ("base24.base07", self.base07.as_str()),
+            ("base24.base08", self.base08.as_str()),
+            ("base24.base09", self.base09.as_str()),
+            ("base24.base0A", self.base0_a.as_str()),
+            ("base24.base0B", self.base0_b.as_str()),
+            ("base24.base0C", self.base0_c.as_str()),
+            ("base24.base0D", self.base0_d.as_str()),
+            ("base24.base0E", self.base0_e.as_str()),
+            ("base24.base0F", self.base0_f.as_str()),
+        ] {
+            validate_hex_color(field, value)?;
+        }
+
+        Ok(())
+    }
 }
 
-fn panel_surface_color(_tone: Tone) -> Color {
-    rgb(BASE00_RGB)
+fn validate_hex_color(field: &str, value: &str) -> Result<(), String> {
+    let Some(hex) = value.strip_prefix('#') else {
+        return Err(format!("{field} must use #RRGGBB"));
+    };
+    if hex.len() != 6 || !hex.chars().all(|character| character.is_ascii_hexdigit()) {
+        return Err(format!("{field} must use #RRGGBB"));
+    }
+
+    Ok(())
 }
 
-fn app_style() -> Style {
-    Style::default().bg(base00()).fg(base05())
-}
-
-fn toned_panel_style(tone: Tone) -> Style {
-    Style::default().bg(panel_surface_color(tone)).fg(base05())
-}
-
-fn muted_style() -> Style {
-    Style::default().fg(base04())
-}
-
-fn subtle_style() -> Style {
-    Style::default().fg(base03())
-}
-
-fn bright_style() -> Style {
-    Style::default().fg(base06())
-}
-
-fn tone_style(tone: Tone) -> Style {
-    Style::default().fg(tone_color(tone))
-}
-
-fn emphasized_tone_style(tone: Tone) -> Style {
-    tone_style(tone).add_modifier(Modifier::BOLD)
-}
-
-fn panel_border_style(tone: Tone) -> Style {
-    tone_style(tone)
-}
-
-fn selected_style() -> Style {
-    Style::default()
-        .bg(base00())
-        .fg(base06())
-        .add_modifier(Modifier::BOLD)
-}
-
-fn editing_style() -> Style {
-    Style::default()
-        .bg(base00())
-        .fg(tone_color(Tone::Warning))
-        .add_modifier(Modifier::BOLD)
+fn parse_hex_triplet(color: &str) -> RgbTriplet {
+    let hex = color.strip_prefix('#').expect("base24 palette validated");
+    (
+        u8::from_str_radix(&hex[0..2], 16).expect("base24 palette validated"),
+        u8::from_str_radix(&hex[2..4], 16).expect("base24 palette validated"),
+        u8::from_str_radix(&hex[4..6], 16).expect("base24 palette validated"),
+    )
 }
 
 fn section_tone(section: SectionId) -> Tone {
@@ -153,82 +246,100 @@ fn validation_tone(is_valid: bool) -> Tone {
     }
 }
 
-fn metric_spans(label: &str, value: String, tone: Tone) -> Vec<Span<'static>> {
+fn metric_spans(theme: &UiTheme, label: &str, value: String, tone: Tone) -> Vec<Span<'static>> {
     vec![
-        Span::styled(format!("{label} "), muted_style()),
-        Span::styled(value, emphasized_tone_style(tone)),
+        Span::styled(format!("{label} "), theme.muted_style()),
+        Span::styled(value, theme.emphasized_tone_style(tone)),
     ]
 }
 
-fn status_value_style(label: &str) -> Style {
+fn status_value_style(theme: &UiTheme, label: &str) -> Style {
     match label {
-        "clean" | "synced" | "valid" | "within tolerance" => emphasized_tone_style(Tone::Success),
-        "dirty" | "pending" => emphasized_tone_style(Tone::Warning),
-        "autosaving" | "syncing" => emphasized_tone_style(Tone::Status),
-        "failed" | "invalid" | "outside tolerance" => emphasized_tone_style(Tone::Danger),
-        _ => bright_style(),
+        "clean" | "synced" | "valid" | "within tolerance" => {
+            theme.emphasized_tone_style(Tone::Success)
+        }
+        "dirty" | "pending" => theme.emphasized_tone_style(Tone::Warning),
+        "autosaving" | "syncing" => theme.emphasized_tone_style(Tone::Status),
+        "failed" | "invalid" | "outside tolerance" => theme.emphasized_tone_style(Tone::Danger),
+        _ => theme.bright_style(),
     }
 }
 
-fn operational_status_style(label: &str) -> Style {
+fn operational_status_style(theme: &UiTheme, label: &str) -> Style {
     match label {
-        "clean" | "synced" => tone_style(Tone::Status),
-        "dirty" | "pending" => tone_style(Tone::Warning),
-        "autosaving" | "syncing" => emphasized_tone_style(Tone::Status),
-        "failed" => emphasized_tone_style(Tone::Danger),
-        _ => muted_style(),
+        "clean" | "synced" => theme.tone_style(Tone::Status),
+        "dirty" | "pending" => theme.tone_style(Tone::Warning),
+        "autosaving" | "syncing" => theme.emphasized_tone_style(Tone::Status),
+        "failed" => theme.emphasized_tone_style(Tone::Danger),
+        _ => theme.muted_style(),
     }
 }
 
-fn month_state_style(is_valid: bool) -> Style {
+fn month_state_style(theme: &UiTheme, is_valid: bool) -> Style {
     if is_valid {
-        tone_style(Tone::Success)
+        theme.tone_style(Tone::Success)
     } else {
-        tone_style(Tone::Warning)
+        theme.tone_style(Tone::Warning)
     }
 }
 
-fn key_hint_spans(hint: &str) -> Vec<Span<'static>> {
+fn key_hint_spans(theme: &UiTheme, hint: &str) -> Vec<Span<'static>> {
     if let Some((key, action)) = hint.split_once(' ') {
         vec![
-            Span::styled(key.to_owned(), emphasized_tone_style(Tone::Guided)),
+            Span::styled(key.to_owned(), theme.emphasized_tone_style(Tone::Guided)),
             Span::raw(" "),
-            Span::styled(action.to_owned(), muted_style()),
+            Span::styled(action.to_owned(), theme.muted_style()),
         ]
     } else {
         vec![Span::styled(
             hint.to_owned(),
-            emphasized_tone_style(Tone::Guided),
+            theme.emphasized_tone_style(Tone::Guided),
         )]
     }
 }
 
 pub fn render(frame: &mut Frame<'_>, route: &Route, repo_root: &Path, config: Option<&AppConfig>) {
-    frame.render_widget(Block::default().style(app_style()), frame.area());
+    let theme = UiTheme::project_default();
+    render_with_theme(frame, route, repo_root, config, theme);
+}
+
+fn render_with_theme(
+    frame: &mut Frame<'_>,
+    route: &Route,
+    repo_root: &Path,
+    config: Option<&AppConfig>,
+    theme: &UiTheme,
+) {
+    frame.render_widget(Block::default().style(theme.app_style()), frame.area());
     match route {
-        Route::Navigation(state) => render_navigation(frame, state, repo_root),
+        Route::Navigation(state) => render_navigation(frame, state, repo_root, theme),
         Route::GuidedCreation(state) => {
             if let Some(config) = config {
-                render_guided_creation(frame, state, config);
+                render_guided_creation(frame, state, config, theme);
             }
         }
         Route::MonthEditing(state) => {
-            if let Some(config) = config {
-                render_editor(frame, state, config);
+            if config.is_some() {
+                render_editor(frame, state, theme);
             }
         }
-        Route::BlockingFailure(state) => render_failure(frame, state),
+        Route::BlockingFailure(state) => render_failure(frame, state, theme),
         Route::Shutdown => {}
     }
 }
 
-fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: &Path) {
+fn render_navigation(
+    frame: &mut Frame<'_>,
+    state: &NavigationState,
+    repo_root: &Path,
+    theme: &UiTheme,
+) {
     let compact = frame.area().width < 110 || frame.area().height < 28;
     let mut header_lines = vec![Line::from(vec![
-        Span::styled("Repo: ", muted_style()),
+        Span::styled("Repo: ", theme.muted_style()),
         Span::styled(
             abbreviate_path(repo_root, frame.area().width.saturating_sub(8) as usize),
-            bright_style(),
+            theme.bright_style(),
         ),
     ])];
     header_lines.extend(hint_lines(
@@ -245,6 +356,7 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
                 "q quit",
             ]
         },
+        theme,
     ));
     let layout = Layout::default()
         .direction(Direction::Vertical)
@@ -255,11 +367,12 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
         .split(frame.area());
 
     let header = Paragraph::new(header_lines)
-        .style(toned_panel_style(Tone::Navigation))
+        .style(theme.toned_panel_style(Tone::Navigation))
         .block(panel_block(
             "Navigation",
             PanelChrome::Boxed,
             Tone::Navigation,
+            theme,
         ));
     frame.render_widget(header, layout[0]);
 
@@ -284,19 +397,19 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
         Row::new(vec![
             Cell::from(Span::styled(
                 entry.document.month.display_label(),
-                bright_style(),
+                theme.bright_style(),
             )),
             Cell::from(Span::styled(
                 status.to_owned(),
-                month_state_style(entry.calculated.validation.is_valid),
+                month_state_style(theme, entry.calculated.validation.is_valid),
             )),
             amount_cell_with_style(
                 entry.calculated.validation.overall_difference.format(),
-                emphasized_tone_style(validation_tone(entry.calculated.validation.is_valid)),
+                theme.emphasized_tone_style(validation_tone(entry.calculated.validation.is_valid)),
             ),
             Cell::from(Span::styled(
                 format_updated_timestamp(entry.document.meta.updated_at.as_deref()),
-                muted_style(),
+                theme.muted_style(),
             )),
         ])
     });
@@ -316,16 +429,16 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
             Cell::from("Diff"),
             Cell::from("Updated"),
         ])
-        .style(emphasized_tone_style(Tone::Navigation)),
+        .style(theme.emphasized_tone_style(Tone::Navigation)),
     )
-    .style(toned_panel_style(Tone::Navigation))
+    .style(theme.toned_panel_style(Tone::Navigation))
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .style(toned_panel_style(Tone::Navigation))
-            .border_style(panel_border_style(Tone::Navigation)),
+            .style(theme.toned_panel_style(Tone::Navigation))
+            .border_style(theme.panel_border_style(Tone::Navigation)),
     )
-    .row_highlight_style(selected_style());
+    .row_highlight_style(theme.selected_style());
     let mut table_state = TableState::default();
     if !state.months.is_empty() {
         table_state.select(Some(state.selected));
@@ -333,22 +446,27 @@ fn render_navigation(frame: &mut Frame<'_>, state: &NavigationState, repo_root: 
     frame.render_stateful_widget(months_table, body[0], &mut table_state);
 
     let summary_text = if let Some(entry) = state.selected_month() {
-        compact_summary_text(&entry.calculated, body[1].width)
+        compact_summary_text(&entry.calculated, body[1].width, theme)
     } else {
         Text::from("No months yet.\nPress `n` to create the first month.")
     };
     let summary = Paragraph::new(summary_text)
-        .style(toned_panel_style(Tone::Summary))
-        .block(panel_block("Summary", PanelChrome::Boxed, Tone::Summary))
+        .style(theme.toned_panel_style(Tone::Summary))
+        .block(panel_block(
+            "Summary",
+            PanelChrome::Boxed,
+            Tone::Summary,
+            theme,
+        ))
         .wrap(Wrap { trim: false });
     frame.render_widget(summary, body[1]);
 
     if let Some(dialog) = &state.dialog {
-        render_navigation_dialog(frame, dialog);
+        render_navigation_dialog(frame, dialog, theme);
     }
 }
 
-fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog) {
+fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog, theme: &UiTheme) {
     let area = centered_rect(68, 36, frame.area());
     frame.render_widget(Clear, area);
     match dialog {
@@ -369,6 +487,7 @@ fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog) {
                         .clone()
                         .unwrap_or_else(|| "Enter confirms. Esc cancels.".to_owned()),
                 ],
+                theme,
             );
         }
         NavigationDialog::Rename(dialog) => {
@@ -388,15 +507,16 @@ fn render_navigation_dialog(frame: &mut Frame<'_>, dialog: &NavigationDialog) {
                         .clone()
                         .unwrap_or_else(|| "Enter confirms. Esc cancels.".to_owned()),
                 ],
+                theme,
             );
         }
         NavigationDialog::Delete(dialog) => {
-            render_delete_dialog(frame, area, dialog);
+            render_delete_dialog(frame, area, dialog, theme);
         }
     }
 }
 
-fn render_delete_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DeleteDialog) {
+fn render_delete_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DeleteDialog, theme: &UiTheme) {
     render_dialog(
         frame,
         area,
@@ -413,27 +533,40 @@ fn render_delete_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DeleteDialog
                 .clone()
                 .unwrap_or_else(|| "Enter confirms. Esc cancels.".to_owned()),
         ],
+        theme,
     );
 }
 
-fn render_dialog(frame: &mut Frame<'_>, area: Rect, title: &str, tone: Tone, lines: &[String]) {
+fn render_dialog(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    tone: Tone,
+    lines: &[String],
+    theme: &UiTheme,
+) {
     let text = Text::from(lines.iter().cloned().map(Line::from).collect::<Vec<_>>());
     frame.render_widget(
         Paragraph::new(text)
-            .style(toned_panel_style(tone))
-            .block(panel_block(title, PanelChrome::Boxed, tone))
+            .style(theme.toned_panel_style(tone))
+            .block(panel_block(title, PanelChrome::Boxed, tone, theme))
             .wrap(Wrap { trim: false }),
         area,
     );
 }
 
-fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, config: &AppConfig) {
+fn render_guided_creation(
+    frame: &mut Frame<'_>,
+    state: &GuidedCreationState,
+    config: &AppConfig,
+    theme: &UiTheme,
+) {
     let profile = GuidedLayoutProfile::for_area(frame.area());
     let mut header_lines = vec![Line::from(vec![
-        Span::styled(state.document.month.display_label(), bright_style()),
+        Span::styled(state.document.month.display_label(), theme.bright_style()),
         Span::styled(
             format!("  |  Step {}/{}", state.step_index + 1, state.steps.len()),
-            muted_style(),
+            theme.muted_style(),
         ),
     ])];
     header_lines.extend(hint_lines(
@@ -448,6 +581,7 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
                 "q quit",
             ],
         },
+        theme,
     ));
     let layout = Layout::default()
         .direction(Direction::Vertical)
@@ -463,23 +597,31 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
         .split(frame.area());
 
     let header = Paragraph::new(header_lines)
-        .style(toned_panel_style(Tone::Guided))
+        .style(theme.toned_panel_style(Tone::Guided))
         .block(panel_block(
             "Guided Creation",
             PanelChrome::Boxed,
             Tone::Guided,
+            theme,
         ));
     frame.render_widget(header, layout[0]);
 
     let current_step = &state.steps[state.step_index];
-    let step_widget = Paragraph::new(guided_step_text(state, config, current_step, profile))
-        .style(toned_panel_style(Tone::Guided))
-        .block(panel_block(
-            "Current Step",
-            guided_panel_chrome(profile),
-            Tone::Guided,
-        ))
-        .wrap(Wrap { trim: false });
+    let step_widget = Paragraph::new(guided_step_text(
+        state,
+        config,
+        current_step,
+        profile,
+        theme,
+    ))
+    .style(theme.toned_panel_style(Tone::Guided))
+    .block(panel_block(
+        "Current Step",
+        guided_panel_chrome(profile),
+        Tone::Guided,
+        theme,
+    ))
+    .wrap(Wrap { trim: false });
 
     match profile {
         GuidedLayoutProfile::Compact => {
@@ -489,9 +631,14 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
                 .split(layout[1]);
             frame.render_widget(step_widget, body[0]);
             frame.render_widget(
-                Paragraph::new(guided_preview_text(state, body[1].width, profile))
-                    .style(toned_panel_style(Tone::Summary))
-                    .block(panel_block("Preview", PanelChrome::Boxed, Tone::Summary))
+                Paragraph::new(guided_preview_text(state, body[1].width, profile, theme))
+                    .style(theme.toned_panel_style(Tone::Summary))
+                    .block(panel_block(
+                        "Preview",
+                        PanelChrome::Boxed,
+                        Tone::Summary,
+                        theme,
+                    ))
                     .wrap(Wrap { trim: false }),
                 body[1],
             );
@@ -503,12 +650,13 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
                 .split(layout[1]);
             frame.render_widget(step_widget, body[0]);
             frame.render_widget(
-                Paragraph::new(guided_preview_text(state, body[1].width, profile))
-                    .style(toned_panel_style(Tone::Summary))
+                Paragraph::new(guided_preview_text(state, body[1].width, profile, theme))
+                    .style(theme.toned_panel_style(Tone::Summary))
                     .block(panel_block(
                         "Live Preview",
                         PanelChrome::Boxed,
                         Tone::Summary,
+                        theme,
                     ))
                     .wrap(Wrap { trim: false }),
                 body[1],
@@ -525,12 +673,13 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
                 .split(layout[1]);
             frame.render_widget(step_widget, body[0]);
             frame.render_widget(
-                Paragraph::new(guided_preview_text(state, body[2].width, profile))
-                    .style(toned_panel_style(Tone::Summary))
+                Paragraph::new(guided_preview_text(state, body[2].width, profile, theme))
+                    .style(theme.toned_panel_style(Tone::Summary))
                     .block(panel_block(
                         "Live Preview",
                         PanelChrome::TopRule,
                         Tone::Summary,
+                        theme,
                     ))
                     .wrap(Wrap { trim: false }),
                 body[2],
@@ -539,12 +688,13 @@ fn render_guided_creation(frame: &mut Frame<'_>, state: &GuidedCreationState, co
     }
 
     frame.render_widget(
-        Paragraph::new(guided_status_lines(state, profile))
-            .style(toned_panel_style(Tone::Status))
+        Paragraph::new(guided_status_lines(state, profile, theme))
+            .style(theme.toned_panel_style(Tone::Status))
             .block(panel_block(
                 "Status",
                 guided_panel_chrome(profile),
                 Tone::Status,
+                theme,
             ))
             .wrap(Wrap { trim: false }),
         layout[2],
@@ -556,16 +706,20 @@ fn guided_step_text(
     config: &AppConfig,
     current_step: &FieldId,
     profile: GuidedLayoutProfile,
+    theme: &UiTheme,
 ) -> Text<'static> {
     match profile {
         GuidedLayoutProfile::Compact => {
             let mut lines = vec![
                 Line::from(Span::styled(
                     current_step.label(config),
-                    emphasized_tone_style(Tone::Guided),
+                    theme.emphasized_tone_style(Tone::Guided),
                 )),
                 Line::from(""),
-                Line::from(Span::styled("Amount", emphasized_tone_style(Tone::Guided))),
+                Line::from(Span::styled(
+                    "Amount",
+                    theme.emphasized_tone_style(Tone::Guided),
+                )),
                 Line::from(Span::styled(
                     format!(
                         "{}{}",
@@ -573,9 +727,9 @@ fn guided_step_text(
                         if state.input.is_edited() { "_" } else { "" }
                     ),
                     if state.input.is_edited() {
-                        editing_style()
+                        theme.editing_style()
                     } else {
-                        selected_style()
+                        theme.selected_style()
                     },
                 )),
             ];
@@ -585,12 +739,15 @@ fn guided_step_text(
                 .filter(|message| !is_guided_status_message(message))
             {
                 lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(message.to_owned(), bright_style())));
+                lines.push(Line::from(Span::styled(
+                    message.to_owned(),
+                    theme.bright_style(),
+                )));
             } else {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
                     "Enter saves this step.",
-                    muted_style(),
+                    theme.muted_style(),
                 )));
             }
             lines.push(Line::from(""));
@@ -600,8 +757,8 @@ fn guided_step_text(
                 .map(|(prefix, remainder)| (format!("{prefix}: "), remainder.to_owned()))
                 .unwrap_or_else(|| ("".to_owned(), next_step));
             lines.push(Line::from(vec![
-                Span::styled(prefix, muted_style()),
-                Span::styled(remainder, emphasized_tone_style(Tone::Summary)),
+                Span::styled(prefix, theme.muted_style()),
+                Span::styled(remainder, theme.emphasized_tone_style(Tone::Summary)),
             ]));
             Text::from(lines)
         }
@@ -609,16 +766,16 @@ fn guided_step_text(
             let mut lines = vec![
                 Line::from(Span::styled(
                     current_step.label(config),
-                    emphasized_tone_style(Tone::Guided),
+                    theme.emphasized_tone_style(Tone::Guided),
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
                     "Type digits or decimals, then press Enter to autosave.",
-                    muted_style(),
+                    theme.muted_style(),
                 )),
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled("Input: ", muted_style()),
+                    Span::styled("Input: ", theme.muted_style()),
                     Span::styled(
                         format!(
                             "{}{}",
@@ -626,9 +783,9 @@ fn guided_step_text(
                             if state.input.is_edited() { "_" } else { "" }
                         ),
                         if state.input.is_edited() {
-                            editing_style()
+                            theme.editing_style()
                         } else {
-                            selected_style()
+                            theme.selected_style()
                         },
                     ),
                 ]),
@@ -639,10 +796,13 @@ fn guided_step_text(
                 .filter(|message| !is_guided_status_message(message))
             {
                 lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(message.to_owned(), bright_style())));
+                lines.push(Line::from(Span::styled(
+                    message.to_owned(),
+                    theme.bright_style(),
+                )));
             }
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled("Next steps:", muted_style())));
+            lines.push(Line::from(Span::styled("Next steps:", theme.muted_style())));
             for step in state.steps.iter().skip(state.step_index + 1).take(
                 if profile == GuidedLayoutProfile::Wide {
                     6
@@ -651,8 +811,8 @@ fn guided_step_text(
                 },
             ) {
                 lines.push(Line::from(vec![
-                    Span::styled("• ", subtle_style()),
-                    Span::styled(step.label(config), tone_style(Tone::Summary)),
+                    Span::styled("• ", theme.subtle_style()),
+                    Span::styled(step.label(config), theme.tone_style(Tone::Summary)),
                 ]));
             }
             Text::from(lines)
@@ -672,17 +832,20 @@ fn guided_preview_text(
     state: &GuidedCreationState,
     width: u16,
     profile: GuidedLayoutProfile,
+    theme: &UiTheme,
 ) -> Text<'static> {
     match profile {
         GuidedLayoutProfile::Compact => Text::from(vec![
             Line::from({
                 let mut spans = metric_spans(
+                    theme,
                     "Accounts",
                     state.calculated.totals.accounts_subtotal.format(),
                     Tone::Accounts,
                 );
-                spans.push(Span::styled("  |  ", subtle_style()));
+                spans.push(Span::styled("  |  ", theme.subtle_style()));
                 spans.extend(metric_spans(
+                    theme,
                     "Pots",
                     state.calculated.totals.pots_final_total.format(),
                     Tone::Pots,
@@ -691,6 +854,7 @@ fn guided_preview_text(
             }),
             Line::from({
                 let mut spans = metric_spans(
+                    theme,
                     "Earmarks",
                     state
                         .calculated
@@ -699,8 +863,9 @@ fn guided_preview_text(
                         .format(),
                     Tone::Earmarks,
                 );
-                spans.push(Span::styled("  |  ", subtle_style()));
+                spans.push(Span::styled("  |  ", theme.subtle_style()));
                 spans.extend(metric_spans(
+                    theme,
                     "Diff",
                     state.calculated.validation.overall_difference.format(),
                     validation_tone(state.calculated.validation.is_valid),
@@ -708,23 +873,26 @@ fn guided_preview_text(
                 spans
             }),
             Line::from(vec![
-                Span::styled("Status ", muted_style()),
+                Span::styled("Status ", theme.muted_style()),
                 Span::styled(
                     if state.calculated.validation.is_valid {
                         "valid"
                     } else {
                         "invalid"
                     },
-                    status_value_style(if state.calculated.validation.is_valid {
-                        "valid"
-                    } else {
-                        "invalid"
-                    }),
+                    status_value_style(
+                        theme,
+                        if state.calculated.validation.is_valid {
+                            "valid"
+                        } else {
+                            "invalid"
+                        },
+                    ),
                 ),
             ]),
         ]),
         GuidedLayoutProfile::Standard | GuidedLayoutProfile::Wide => {
-            compact_summary_text(&state.calculated, width)
+            compact_summary_text(&state.calculated, width, theme)
         }
     }
 }
@@ -732,9 +900,10 @@ fn guided_preview_text(
 fn guided_status_lines(
     state: &GuidedCreationState,
     profile: GuidedLayoutProfile,
+    theme: &UiTheme,
 ) -> Vec<Line<'static>> {
     match profile {
-        GuidedLayoutProfile::Compact => vec![status_line(state.persistence, state.sync)],
+        GuidedLayoutProfile::Compact => vec![status_line(state.persistence, state.sync, theme)],
         GuidedLayoutProfile::Standard => vec![
             Line::from({
                 let validation = if state.calculated.validation.is_valid {
@@ -743,22 +912,22 @@ fn guided_status_lines(
                     "outside tolerance"
                 };
                 let spans = vec![
-                    Span::styled("Validation: ", muted_style()),
-                    Span::styled(validation, status_value_style(validation)),
-                    Span::styled("  |  Difference: ", subtle_style()),
+                    Span::styled("Validation: ", theme.muted_style()),
+                    Span::styled(validation, status_value_style(theme, validation)),
+                    Span::styled("  |  Difference: ", theme.subtle_style()),
                     Span::styled(
                         state.calculated.validation.overall_difference.format(),
-                        emphasized_tone_style(validation_tone(
+                        theme.emphasized_tone_style(validation_tone(
                             state.calculated.validation.is_valid,
                         )),
                     ),
                 ];
                 spans
             }),
-            status_line(state.persistence, state.sync),
+            status_line(state.persistence, state.sync, theme),
             Line::from(Span::styled(
                 "The draft is saved as you confirm each guided step.",
-                muted_style(),
+                theme.muted_style(),
             )),
         ],
         GuidedLayoutProfile::Wide => vec![
@@ -769,19 +938,19 @@ fn guided_status_lines(
                     "outside tolerance"
                 };
                 let spans = vec![
-                    Span::styled("Validation: ", muted_style()),
-                    Span::styled(validation, status_value_style(validation)),
-                    Span::styled("  |  Difference: ", subtle_style()),
+                    Span::styled("Validation: ", theme.muted_style()),
+                    Span::styled(validation, status_value_style(theme, validation)),
+                    Span::styled("  |  Difference: ", theme.subtle_style()),
                     Span::styled(
                         state.calculated.validation.overall_difference.format(),
-                        emphasized_tone_style(validation_tone(
+                        theme.emphasized_tone_style(validation_tone(
                             state.calculated.validation.is_valid,
                         )),
                     ),
                 ];
                 spans
             }),
-            status_line(state.persistence, state.sync),
+            status_line(state.persistence, state.sync, theme),
         ],
     }
 }
@@ -793,11 +962,11 @@ fn guided_panel_chrome(profile: GuidedLayoutProfile) -> PanelChrome {
     }
 }
 
-fn render_editor(frame: &mut Frame<'_>, state: &EditorState, config: &AppConfig) {
+fn render_editor(frame: &mut Frame<'_>, state: &EditorState, theme: &UiTheme) {
     let profile = EditorLayoutProfile::for_area(frame.area());
     let mut header_lines = vec![Line::from(Span::styled(
         state.document.month.display_label(),
-        bright_style(),
+        theme.bright_style(),
     ))];
     header_lines.extend(hint_lines(
         frame.area().width,
@@ -806,6 +975,7 @@ fn render_editor(frame: &mut Frame<'_>, state: &EditorState, config: &AppConfig)
         } else {
             &["Enter edit", "Tab/Shift-Tab move", "Esc months", "q quit"]
         },
+        theme,
     ));
     let footer_height = if profile == EditorLayoutProfile::Wide {
         3
@@ -825,20 +995,21 @@ fn render_editor(frame: &mut Frame<'_>, state: &EditorState, config: &AppConfig)
         "Monthly Sheet",
         PanelChrome::Boxed,
         Tone::Navigation,
+        theme,
     ));
-    let header = header.style(toned_panel_style(Tone::Navigation));
+    let header = header.style(theme.toned_panel_style(Tone::Navigation));
     frame.render_widget(header, layout[0]);
 
     match profile {
-        EditorLayoutProfile::Wide => render_editor_wide(frame, layout[1], state, config),
-        EditorLayoutProfile::Standard => render_editor_standard(frame, layout[1], state, config),
-        EditorLayoutProfile::Compact => render_editor_compact(frame, layout[1], state, config),
+        EditorLayoutProfile::Wide => render_editor_wide(frame, layout[1], state, theme),
+        EditorLayoutProfile::Standard => render_editor_standard(frame, layout[1], state, theme),
+        EditorLayoutProfile::Compact => render_editor_compact(frame, layout[1], state, theme),
     }
 
-    render_editor_footer(frame, layout[2], state, config, profile);
+    render_editor_footer(frame, layout[2], state, profile, theme);
 }
 
-fn render_editor_wide(frame: &mut Frame<'_>, area: Rect, state: &EditorState, config: &AppConfig) {
+fn render_editor_wide(frame: &mut Frame<'_>, area: Rect, state: &EditorState, theme: &UiTheme) {
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -862,22 +1033,41 @@ fn render_editor_wide(frame: &mut Frame<'_>, area: Rect, state: &EditorState, co
         frame,
         left[0],
         state,
-        config,
         false,
         true,
         PanelChrome::TopRule,
+        theme,
     );
-    render_timing(frame, left[2], state, false, true, PanelChrome::TopRule);
-    render_earmarks(frame, left[4], state, false, true, PanelChrome::TopRule);
-    render_pots(frame, columns[2], state, false, true, PanelChrome::TopRule);
+    render_timing(
+        frame,
+        left[2],
+        state,
+        false,
+        true,
+        PanelChrome::TopRule,
+        theme,
+    );
+    render_earmarks(
+        frame,
+        left[4],
+        state,
+        false,
+        true,
+        PanelChrome::TopRule,
+        theme,
+    );
+    render_pots(
+        frame,
+        columns[2],
+        state,
+        false,
+        true,
+        PanelChrome::TopRule,
+        theme,
+    );
 }
 
-fn render_editor_standard(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    state: &EditorState,
-    config: &AppConfig,
-) {
+fn render_editor_standard(frame: &mut Frame<'_>, area: Rect, state: &EditorState, theme: &UiTheme) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -891,22 +1081,25 @@ fn render_editor_standard(
         frame,
         rows[0],
         state,
-        config,
         false,
         true,
         PanelChrome::Boxed,
+        theme,
     );
-    render_timing(frame, rows[1], state, true, true, PanelChrome::Boxed);
-    render_earmarks(frame, rows[2], state, true, true, PanelChrome::Boxed);
-    render_pots(frame, rows[3], state, false, true, PanelChrome::Boxed);
+    render_timing(frame, rows[1], state, true, true, PanelChrome::Boxed, theme);
+    render_earmarks(frame, rows[2], state, true, true, PanelChrome::Boxed, theme);
+    render_pots(
+        frame,
+        rows[3],
+        state,
+        false,
+        true,
+        PanelChrome::Boxed,
+        theme,
+    );
 }
 
-fn render_editor_compact(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    state: &EditorState,
-    config: &AppConfig,
-) {
+fn render_editor_compact(frame: &mut Frame<'_>, area: Rect, state: &EditorState, theme: &UiTheme) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(7)])
@@ -914,51 +1107,70 @@ fn render_editor_compact(
     let selected_section = selected_field(state)
         .map(FieldId::section)
         .unwrap_or(SectionId::Accounts);
-    render_section_tabs(frame, rows[0], selected_section);
+    render_section_tabs(frame, rows[0], selected_section, theme);
     match selected_section {
         SectionId::Accounts => render_accounts(
             frame,
             rows[1],
             state,
-            config,
             true,
             false,
             PanelChrome::Boxed,
+            theme,
         ),
-        SectionId::TimingAdjustments => {
-            render_timing(frame, rows[1], state, true, false, PanelChrome::Boxed)
-        }
-        SectionId::NextMonthEarmarks => {
-            render_earmarks(frame, rows[1], state, true, false, PanelChrome::Boxed)
-        }
-        SectionId::SavingsPots => {
-            render_pots(frame, rows[1], state, true, false, PanelChrome::Boxed)
-        }
+        SectionId::TimingAdjustments => render_timing(
+            frame,
+            rows[1],
+            state,
+            true,
+            false,
+            PanelChrome::Boxed,
+            theme,
+        ),
+        SectionId::NextMonthEarmarks => render_earmarks(
+            frame,
+            rows[1],
+            state,
+            true,
+            false,
+            PanelChrome::Boxed,
+            theme,
+        ),
+        SectionId::SavingsPots => render_pots(
+            frame,
+            rows[1],
+            state,
+            true,
+            false,
+            PanelChrome::Boxed,
+            theme,
+        ),
     }
 }
 
-fn render_section_tabs(frame: &mut Frame<'_>, area: Rect, selected: SectionId) {
+fn render_section_tabs(frame: &mut Frame<'_>, area: Rect, selected: SectionId, theme: &UiTheme) {
     let mut spans = Vec::new();
     for section in SectionId::ALL {
         if !spans.is_empty() {
-            spans.push(Span::styled(" | ", subtle_style()));
+            spans.push(Span::styled(" | ", theme.subtle_style()));
         }
         spans.push(Span::styled(
             section.compact_title(),
             if section == selected {
-                selected_style()
+                theme.selected_style()
             } else {
-                emphasized_tone_style(section_tone(section))
+                theme.emphasized_tone_style(section_tone(section))
             },
         ));
     }
     frame.render_widget(
         Paragraph::new(Line::from(spans))
-            .style(toned_panel_style(Tone::Navigation))
+            .style(theme.toned_panel_style(Tone::Navigation))
             .block(panel_block(
                 "Sections",
                 PanelChrome::Boxed,
                 Tone::Navigation,
+                theme,
             )),
         area,
     );
@@ -968,38 +1180,41 @@ fn render_editor_footer(
     frame: &mut Frame<'_>,
     area: Rect,
     state: &EditorState,
-    _config: &AppConfig,
     profile: EditorLayoutProfile,
+    theme: &UiTheme,
 ) {
     let lines = vec![
         Line::from(vec![
-            Span::styled("Budget: ", muted_style()),
+            Span::styled("Budget: ", theme.muted_style()),
             Span::styled(
                 if state.calculated.validation.is_valid {
                     "within tolerance"
                 } else {
                     "outside tolerance"
                 },
-                status_value_style(if state.calculated.validation.is_valid {
-                    "within tolerance"
-                } else {
-                    "outside tolerance"
-                }),
+                status_value_style(
+                    theme,
+                    if state.calculated.validation.is_valid {
+                        "within tolerance"
+                    } else {
+                        "outside tolerance"
+                    },
+                ),
             ),
-            Span::styled("  |  Difference: ", subtle_style()),
+            Span::styled("  |  Difference: ", theme.subtle_style()),
             Span::styled(
                 state.calculated.validation.overall_difference.format(),
-                emphasized_tone_style(validation_tone(state.calculated.validation.is_valid)),
+                theme.emphasized_tone_style(validation_tone(state.calculated.validation.is_valid)),
             ),
         ]),
-        status_line(state.persistence, state.sync),
+        status_line(state.persistence, state.sync, theme),
     ];
     frame.render_widget(
         Paragraph::new(lines)
             .style(if state.calculated.validation.is_valid {
-                toned_panel_style(Tone::Success)
+                theme.toned_panel_style(Tone::Success)
             } else {
-                toned_panel_style(Tone::Danger)
+                theme.toned_panel_style(Tone::Danger)
             })
             .block(panel_block(
                 "Validation",
@@ -1013,33 +1228,35 @@ fn render_editor_footer(
                 } else {
                     Tone::Danger
                 },
+                theme,
             ))
             .wrap(Wrap { trim: false }),
         area,
     );
 }
 
-fn render_failure(frame: &mut Frame<'_>, state: &FailureState) {
+fn render_failure(frame: &mut Frame<'_>, state: &FailureState, theme: &UiTheme) {
     let area = centered_rect(70, 40, frame.area());
     frame.render_widget(Clear, area);
     let lines = vec![
         Line::from(Span::styled(
             state.title.clone(),
-            emphasized_tone_style(Tone::Danger),
+            theme.emphasized_tone_style(Tone::Danger),
         )),
         Line::from(""),
-        Line::from(Span::styled(state.message.clone(), bright_style())),
+        Line::from(Span::styled(state.message.clone(), theme.bright_style())),
         Line::from(""),
-        Line::from(key_hint_spans("r retry")),
-        Line::from(key_hint_spans("q quit")),
+        Line::from(key_hint_spans(theme, "r retry")),
+        Line::from(key_hint_spans(theme, "q quit")),
     ];
     frame.render_widget(
         Paragraph::new(lines)
-            .style(toned_panel_style(Tone::Danger))
+            .style(theme.toned_panel_style(Tone::Danger))
             .block(panel_block(
                 "Blocking Failure",
                 PanelChrome::Boxed,
                 Tone::Danger,
+                theme,
             ))
             .wrap(Wrap { trim: false }),
         area,
@@ -1050,10 +1267,10 @@ fn render_accounts(
     frame: &mut Frame<'_>,
     area: Rect,
     state: &EditorState,
-    _config: &AppConfig,
     compact: bool,
     show_title: bool,
     chrome: PanelChrome,
+    theme: &UiTheme,
 ) {
     let rows = state.calculated.account_rows.iter().map(|row| {
         let field = FieldId::Account(row.id.clone());
@@ -1065,7 +1282,7 @@ fn render_accounts(
                     AccountKind::Asset => "+",
                     AccountKind::Liability => "-",
                 },
-                emphasized_tone_style(match row.kind {
+                theme.emphasized_tone_style(match row.kind {
                     AccountKind::Asset => Tone::Success,
                     AccountKind::Liability => Tone::Liability,
                 }),
@@ -1074,16 +1291,17 @@ fn render_accounts(
                 value_for_field(state, &field, &state.document),
                 focus,
                 Tone::Accounts,
+                theme,
             ),
             amount_cell_with_style(
                 row.normalised_balance.format(),
-                emphasized_tone_style(match row.kind {
+                theme.emphasized_tone_style(match row.kind {
                     AccountKind::Asset => Tone::Accounts,
                     AccountKind::Liability => Tone::Liability,
                 }),
             ),
         ])
-        .style(focused_row_style(focus))
+        .style(focused_row_style(focus, theme))
     });
     let table = Table::new(
         rows,
@@ -1110,9 +1328,9 @@ fn render_accounts(
             Cell::from("Entered"),
             Cell::from("Net"),
         ])
-        .style(emphasized_tone_style(Tone::Accounts)),
+        .style(theme.emphasized_tone_style(Tone::Accounts)),
     )
-    .style(toned_panel_style(Tone::Accounts))
+    .style(theme.toned_panel_style(Tone::Accounts))
     .block(section_block(
         show_title.then_some("Accounts"),
         format!(
@@ -1122,6 +1340,7 @@ fn render_accounts(
         section_focus_state(state, SectionId::Accounts),
         Tone::Accounts,
         chrome,
+        theme,
     ));
     frame.render_widget(table, area);
 }
@@ -1133,6 +1352,7 @@ fn render_timing(
     compact: bool,
     show_title: bool,
     chrome: PanelChrome,
+    theme: &UiTheme,
 ) {
     let correction = FieldId::PreviousMonthSpendingCorrection;
     let investment = FieldId::InvestmentNotYetSent;
@@ -1145,6 +1365,7 @@ fn render_timing(
                 value_for_field(state, &correction, &state.document),
                 correction_focus,
                 Tone::Timing,
+                theme,
             ),
             amount_cell_with_style(
                 state
@@ -1152,23 +1373,24 @@ fn render_timing(
                     .timing
                     .previous_month_spending_correction_effect
                     .format(),
-                emphasized_tone_style(Tone::Timing),
+                theme.emphasized_tone_style(Tone::Timing),
             ),
         ])
-        .style(focused_row_style(correction_focus)),
+        .style(focused_row_style(correction_focus, theme)),
         Row::new(vec![
             labeled_row_cell("Investment not yet sent", investment_focus),
             styled_value_cell_with_tone(
                 value_for_field(state, &investment, &state.document),
                 investment_focus,
                 Tone::Timing,
+                theme,
             ),
             amount_cell_with_style(
                 state.calculated.timing.investment_effect.format(),
-                emphasized_tone_style(Tone::Timing),
+                theme.emphasized_tone_style(Tone::Timing),
             ),
         ])
-        .style(focused_row_style(investment_focus)),
+        .style(focused_row_style(investment_focus, theme)),
     ];
     let table = Table::new(
         rows,
@@ -1184,9 +1406,9 @@ fn render_timing(
             Cell::from("Entered"),
             Cell::from("Effect"),
         ])
-        .style(emphasized_tone_style(Tone::Timing)),
+        .style(theme.emphasized_tone_style(Tone::Timing)),
     )
-    .style(toned_panel_style(Tone::Timing))
+    .style(theme.toned_panel_style(Tone::Timing))
     .block(section_block(
         show_title.then_some("Timing Adjustments"),
         format!(
@@ -1196,6 +1418,7 @@ fn render_timing(
         section_focus_state(state, SectionId::TimingAdjustments),
         Tone::Timing,
         chrome,
+        theme,
     ));
     frame.render_widget(table, area);
 }
@@ -1207,6 +1430,7 @@ fn render_earmarks(
     compact: bool,
     show_title: bool,
     chrome: PanelChrome,
+    theme: &UiTheme,
 ) {
     let rows = state.calculated.earmark_rows.iter().map(|row| {
         let field = FieldId::Earmark(row.id.clone());
@@ -1217,9 +1441,10 @@ fn render_earmarks(
                 value_for_field(state, &field, &state.document),
                 focus,
                 Tone::Earmarks,
+                theme,
             ),
         ])
-        .style(focused_row_style(focus))
+        .style(focused_row_style(focus, theme))
     });
     let table = Table::new(
         rows,
@@ -1233,9 +1458,9 @@ fn render_earmarks(
             Cell::from(if show_title { "" } else { "Earmark" }),
             Cell::from("Amount"),
         ])
-        .style(emphasized_tone_style(Tone::Earmarks)),
+        .style(theme.emphasized_tone_style(Tone::Earmarks)),
     )
-    .style(toned_panel_style(Tone::Earmarks))
+    .style(theme.toned_panel_style(Tone::Earmarks))
     .block(section_block(
         show_title.then_some("Next Month Earmarks"),
         format!(
@@ -1249,6 +1474,7 @@ fn render_earmarks(
         section_focus_state(state, SectionId::NextMonthEarmarks),
         Tone::Earmarks,
         chrome,
+        theme,
     ));
     frame.render_widget(table, area);
 }
@@ -1260,6 +1486,7 @@ fn render_pots(
     compact: bool,
     show_title: bool,
     chrome: PanelChrome,
+    theme: &UiTheme,
 ) {
     let mut rows = state
         .calculated
@@ -1277,37 +1504,42 @@ fn render_pots(
                     value_for_field(state, &carried, &state.document),
                     carried_focus,
                     Tone::Pots,
+                    theme,
                 ),
                 styled_value_cell_with_tone(
                     value_for_field(state, &change, &state.document),
                     change_focus,
                     Tone::Pots,
+                    theme,
                 ),
                 amount_cell_with_style(
                     row.final_balance.format(),
-                    emphasized_tone_style(Tone::Pots),
+                    theme.emphasized_tone_style(Tone::Pots),
                 ),
             ])
-            .style(focused_row_style(row_focus))
+            .style(focused_row_style(row_focus, theme))
         })
         .collect::<Vec<_>>();
     rows.push(
         Row::new(vec![
-            Cell::from(Span::styled("Total", emphasized_tone_style(Tone::Pots))),
+            Cell::from(Span::styled(
+                "Total",
+                theme.emphasized_tone_style(Tone::Pots),
+            )),
             amount_cell_with_style(
                 state.calculated.totals.pots_carried_total.format(),
-                emphasized_tone_style(Tone::Pots),
+                theme.emphasized_tone_style(Tone::Pots),
             ),
             amount_cell_with_style(
                 state.calculated.totals.pots_monthly_change_total.format(),
-                emphasized_tone_style(Tone::Pots),
+                theme.emphasized_tone_style(Tone::Pots),
             ),
             amount_cell_with_style(
                 state.calculated.totals.pots_final_total.format(),
-                emphasized_tone_style(Tone::Pots),
+                theme.emphasized_tone_style(Tone::Pots),
             ),
         ])
-        .style(bright_style().add_modifier(Modifier::BOLD)),
+        .style(theme.bright_style().add_modifier(Modifier::BOLD)),
     );
 
     let table = Table::new(
@@ -1335,9 +1567,9 @@ fn render_pots(
             Cell::from("Change"),
             Cell::from("Final"),
         ])
-        .style(emphasized_tone_style(Tone::Pots)),
+        .style(theme.emphasized_tone_style(Tone::Pots)),
     )
-    .style(toned_panel_style(Tone::Pots))
+    .style(theme.toned_panel_style(Tone::Pots))
     .block(section_block(
         show_title.then_some("Savings Pots"),
         format!(
@@ -1347,6 +1579,7 @@ fn render_pots(
         section_focus_state(state, SectionId::SavingsPots),
         Tone::Pots,
         chrome,
+        theme,
     ));
     frame.render_widget(table, area);
 }
@@ -1412,12 +1645,13 @@ fn styled_value_cell_with_tone(
     value: String,
     focus: EditorFocusState,
     tone: Tone,
+    theme: &UiTheme,
 ) -> Cell<'static> {
     let cell = amount_cell(value);
     match focus {
-        EditorFocusState::Unfocused => cell.style(tone_style(tone)),
-        EditorFocusState::Selected => cell.style(selected_style()),
-        EditorFocusState::Editing => cell.style(editing_style()),
+        EditorFocusState::Unfocused => cell.style(theme.tone_style(tone)),
+        EditorFocusState::Selected => cell.style(theme.selected_style()),
+        EditorFocusState::Editing => cell.style(theme.editing_style()),
     }
 }
 
@@ -1433,11 +1667,11 @@ fn focus_marker(focus: EditorFocusState) -> &'static str {
     }
 }
 
-fn focused_row_style(focus: EditorFocusState) -> Style {
+fn focused_row_style(focus: EditorFocusState, theme: &UiTheme) -> Style {
     match focus {
         EditorFocusState::Unfocused => Style::default(),
-        EditorFocusState::Selected => selected_style(),
-        EditorFocusState::Editing => selected_style(),
+        EditorFocusState::Selected => theme.selected_style(),
+        EditorFocusState::Editing => theme.selected_style(),
     }
 }
 
@@ -1454,7 +1688,7 @@ fn section_height(row_count: usize, compact_title: bool) -> u16 {
     base.max(6)
 }
 
-fn status_line(persistence: PersistenceState, sync: SyncState) -> Line<'static> {
+fn status_line(persistence: PersistenceState, sync: SyncState, theme: &UiTheme) -> Line<'static> {
     let persistence_label = match persistence {
         PersistenceState::Clean => "clean",
         PersistenceState::Dirty => "dirty",
@@ -1468,17 +1702,17 @@ fn status_line(persistence: PersistenceState, sync: SyncState) -> Line<'static> 
         SyncState::SyncFailed => "failed",
     };
     Line::from(vec![
-        Span::styled("Persistence: ", muted_style()),
+        Span::styled("Persistence: ", theme.muted_style()),
         Span::styled(
             persistence_label,
-            operational_status_style(persistence_label),
+            operational_status_style(theme, persistence_label),
         ),
-        Span::styled("  |  Sync: ", subtle_style()),
-        Span::styled(sync_label, operational_status_style(sync_label)),
+        Span::styled("  |  Sync: ", theme.subtle_style()),
+        Span::styled(sync_label, operational_status_style(theme, sync_label)),
     ])
 }
 
-fn hint_lines(width: u16, hints: &[&str]) -> Vec<Line<'static>> {
+fn hint_lines(width: u16, hints: &[&str], theme: &UiTheme) -> Vec<Line<'static>> {
     let available = width.saturating_sub(4) as usize;
     let separator = " | ";
     let mut lines = Vec::new();
@@ -1497,10 +1731,10 @@ fn hint_lines(width: u16, hints: &[&str]) -> Vec<Line<'static>> {
         }
         if !current.is_empty() {
             current.push_str(separator);
-            current_spans.push(Span::styled(separator, subtle_style()));
+            current_spans.push(Span::styled(separator, theme.subtle_style()));
         }
         current.push_str(hint);
-        current_spans.extend(key_hint_spans(hint));
+        current_spans.extend(key_hint_spans(theme, hint));
     }
 
     if !current.is_empty() {
@@ -1518,14 +1752,17 @@ fn abbreviate_path(path: &Path, max_width: usize) -> String {
     format!("...{}", &text[text.len() - (max_width - 3)..])
 }
 
-fn panel_block(title: &str, chrome: PanelChrome, tone: Tone) -> Block<'static> {
+fn panel_block(title: &str, chrome: PanelChrome, tone: Tone, theme: &UiTheme) -> Block<'static> {
     Block::default()
         .borders(panel_borders(chrome))
-        .style(toned_panel_style(tone))
-        .border_style(panel_border_style(tone))
+        .style(theme.toned_panel_style(tone))
+        .border_style(theme.panel_border_style(tone))
         .title(
-            Line::from(Span::styled(title.to_owned(), emphasized_tone_style(tone)))
-                .alignment(Alignment::Left),
+            Line::from(Span::styled(
+                title.to_owned(),
+                theme.emphasized_tone_style(tone),
+            ))
+            .alignment(Alignment::Left),
         )
 }
 
@@ -1542,22 +1779,23 @@ fn section_block(
     focus: EditorFocusState,
     tone: Tone,
     chrome: PanelChrome,
+    theme: &UiTheme,
 ) -> Block<'static> {
     let mut block = Block::default()
         .borders(panel_borders(chrome))
-        .style(toned_panel_style(tone))
-        .border_style(section_emphasis_style(focus, tone));
+        .style(theme.toned_panel_style(tone))
+        .border_style(section_emphasis_style(focus, tone, theme));
     if let Some(title) = title {
         block = block.title(
             Line::from(title.to_owned())
-                .style(section_emphasis_style(focus, tone))
+                .style(section_emphasis_style(focus, tone, theme))
                 .alignment(Alignment::Left),
         );
     }
     block.title(
         Line::from(Span::styled(
             subtotal,
-            emphasized_tone_style(match focus {
+            theme.emphasized_tone_style(match focus {
                 EditorFocusState::Editing => Tone::Warning,
                 EditorFocusState::Selected => tone,
                 EditorFocusState::Unfocused => tone,
@@ -1567,15 +1805,19 @@ fn section_block(
     )
 }
 
-fn section_emphasis_style(focus: EditorFocusState, tone: Tone) -> Style {
+fn section_emphasis_style(focus: EditorFocusState, tone: Tone, theme: &UiTheme) -> Style {
     match focus {
-        EditorFocusState::Unfocused => tone_style(tone),
-        EditorFocusState::Selected => emphasized_tone_style(tone),
-        EditorFocusState::Editing => emphasized_tone_style(Tone::Warning),
+        EditorFocusState::Unfocused => theme.tone_style(tone),
+        EditorFocusState::Selected => theme.emphasized_tone_style(tone),
+        EditorFocusState::Editing => theme.emphasized_tone_style(Tone::Warning),
     }
 }
 
-fn compact_summary_text(calculated: &CalculatedMonth, width: u16) -> Text<'static> {
+fn compact_summary_text(
+    calculated: &CalculatedMonth,
+    width: u16,
+    theme: &UiTheme,
+) -> Text<'static> {
     let metrics = vec![
         (
             "Accounts",
@@ -1617,10 +1859,14 @@ fn compact_summary_text(calculated: &CalculatedMonth, width: u16) -> Text<'stati
             validation_tone(calculated.validation.is_valid),
         ),
     ];
-    Text::from(wrapped_metric_lines(width, &metrics))
+    Text::from(wrapped_metric_lines(width, &metrics, theme))
 }
 
-fn wrapped_metric_lines(width: u16, metrics: &[(&str, String, Tone)]) -> Vec<Line<'static>> {
+fn wrapped_metric_lines(
+    width: u16,
+    metrics: &[(&str, String, Tone)],
+    theme: &UiTheme,
+) -> Vec<Line<'static>> {
     let available = width.saturating_sub(4) as usize;
     let separator = " | ";
     let mut lines = Vec::new();
@@ -1640,10 +1886,10 @@ fn wrapped_metric_lines(width: u16, metrics: &[(&str, String, Tone)]) -> Vec<Lin
         }
         if !current.is_empty() {
             current.push_str(separator);
-            current_spans.push(Span::styled(separator, subtle_style()));
+            current_spans.push(Span::styled(separator, theme.subtle_style()));
         }
         current.push_str(&metric_text);
-        current_spans.extend(metric_spans(label, value.clone(), *tone));
+        current_spans.extend(metric_spans(theme, label, value.clone(), *tone));
     }
 
     if !current.is_empty() {
@@ -1745,7 +1991,7 @@ mod tests {
     use ratatui::buffer::Buffer;
     use ratatui::prelude::{Color, Modifier};
 
-    use super::render;
+    use super::{Base24PaletteConfig, UiTheme, render_with_theme};
     use crate::state::{
         EditorState, FieldId, GuidedCreationState, InteractionState, MoneyInput, MonthEntry,
         NavigationState, PersistenceState, Route, SyncState,
@@ -1944,6 +2190,46 @@ mod tests {
         let (pots_x, pots_y) = find_text(&buffer, "Final").unwrap();
         let pots = &buffer[(pots_x, pots_y)];
         assert_eq!(pots.bg, Color::Rgb(0x26, 0x26, 0x26));
+    }
+
+    #[test]
+    fn editor_render_can_use_a_project_theme_override() {
+        let config = AppConfig::default_mvp();
+        let theme = UiTheme::from_palette(&Base24PaletteConfig {
+            base00: "#101112".to_owned(),
+            base01: "#343434".to_owned(),
+            base02: "#535353".to_owned(),
+            base03: "#797979".to_owned(),
+            base04: "#a0a09f".to_owned(),
+            base05: "#c7c7c5".to_owned(),
+            base06: "#eeeeec".to_owned(),
+            base07: "#ffffff".to_owned(),
+            base08: "#d25151".to_owned(),
+            base09: "#ffc66d".to_owned(),
+            base0_a: "#8ab7d9".to_owned(),
+            base0_b: "#11ee44".to_owned(),
+            base0_c: "#bed6ff".to_owned(),
+            base0_d: "#6c99bb".to_owned(),
+            base0_e: "#d197d9".to_owned(),
+            base0_f: "#692828".to_owned(),
+        });
+
+        let buffer = draw_route_with_theme(&editor_route(&config), Some(&config), 105, 48, &theme);
+
+        let (title_x, title_y) = find_text(&buffer, "Savings Pots").unwrap();
+        let title = &buffer[(title_x, title_y)];
+        assert_eq!(title.fg, Color::Rgb(0x11, 0xee, 0x44));
+
+        let (input_x, input_y) = find_text(&buffer, "£820.00").unwrap();
+        let input = &buffer[(input_x, input_y)];
+        assert_eq!(input.bg, Color::Rgb(0x10, 0x11, 0x12));
+    }
+
+    #[test]
+    fn bundled_project_theme_is_valid() {
+        let theme = UiTheme::project_default();
+        assert_eq!(theme.base00, Color::Rgb(0x26, 0x26, 0x26));
+        assert_eq!(theme.base0b, Color::Rgb(0xa5, 0xc2, 0x61));
     }
 
     #[test]
@@ -2206,10 +2492,20 @@ mod tests {
     }
 
     fn draw_route(route: &Route, config: Option<&AppConfig>, width: u16, height: u16) -> Buffer {
+        draw_route_with_theme(route, config, width, height, UiTheme::project_default())
+    }
+
+    fn draw_route_with_theme(
+        route: &Route,
+        config: Option<&AppConfig>,
+        width: u16,
+        height: u16,
+        theme: &UiTheme,
+    ) -> Buffer {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
-            .draw(|frame| render(frame, route, Path::new("/tmp/budget"), config))
+            .draw(|frame| render_with_theme(frame, route, Path::new("/tmp/budget"), config, theme))
             .unwrap();
         terminal.backend().buffer().clone()
     }

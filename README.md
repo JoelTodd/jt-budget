@@ -23,6 +23,8 @@ cargo run -p jt-budget -- run --repo /path/to/budget-repo
 
 `init` creates a ready-to-run data repo. With `--remote`, it publishes `main` and configures `origin/main` so `run` passes the repo gate immediately. Without a remote, the repo runs in local-only mode. After startup, sync remains strict and uses `git pull --ff-only` plus blocking push failures. Each confirmed guided step or edited field autosaves the month file, commits it, and pushes when a remote is configured. Month files live in `months/YYYY-MM.toml`; cached derived values are written for inspection but recomputed on load.
 
+The bundled Base24 palette lives in [`budget-app/theme.toml`](budget-app/theme.toml).
+
 ## Main keys
 
 - Navigation: `n` create month, `Enter` open month, `m` rename month, `d` delete month, `r` refresh, `q` quit.
