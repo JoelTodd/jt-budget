@@ -50,11 +50,7 @@ impl Repository {
     /// Returns an error if the target directory is not empty, required files
     /// cannot be written, or git initialisation fails.
     pub fn init(root: &Path, remote: Option<&str>) -> Result<()> {
-        ensure!(
-            !root.exists() || fs::read_dir(root)?.next().transpose()?.is_none(),
-            "repository path `{}` must be empty or not exist",
-            root.display()
-        );
+        ensure_directory_missing_or_empty(root)?;
 
         fs::create_dir_all(root.join("months"))
             .with_context(|| format!("creating months directory in `{}`", root.display()))?;
@@ -79,6 +75,39 @@ impl Repository {
         }
 
         Ok(())
+    }
+
+    /// Clones an existing remote repository into a missing or empty directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the target directory is unsuitable or the clone
+    /// operation fails.
+    pub fn clone_from_remote(remote: &str, target: &Path) -> Result<()> {
+        ensure!(!remote.trim().is_empty(), "remote cannot be empty");
+        ensure_directory_missing_or_empty(target)?;
+
+        let output = Command::new("git")
+            .arg("clone")
+            .arg("--origin")
+            .arg("origin")
+            .arg(remote)
+            .arg(target)
+            .output()
+            .with_context(|| {
+                format!(
+                    "running `git clone --origin origin {remote} {}`",
+                    target.display()
+                )
+            })?;
+        if output.status.success() {
+            return Ok(());
+        }
+
+        bail!(
+            "git clone failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
 
     /// Reports whether a path already looks like a jt-budget repository root.
@@ -115,6 +144,18 @@ impl Repository {
     /// Returns an error when Git cannot inspect the repository config.
     pub fn has_origin_remote(root: &Path) -> Result<bool> {
         has_remote_named(root, "origin")
+    }
+
+    /// Returns the configured `origin` remote URL when present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when Git cannot inspect the repository config.
+    pub fn origin_remote_url(root: &Path) -> Result<Option<String>> {
+        if has_remote_named(root, "origin")? {
+            return Ok(Some(remote_url(root, "origin")?));
+        }
+        Ok(None)
     }
 
     /// Configures or verifies the `origin` remote and ensures `main` tracks it.
@@ -474,6 +515,32 @@ fn remote_url(root: &Path, remote: &str) -> Result<String> {
     run_git(root, ["config", "--get", &remote_key])
 }
 
+fn ensure_directory_missing_or_empty(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    ensure!(
+        path.is_dir(),
+        "repository path `{}` must be a directory",
+        path.display()
+    );
+
+    if fs::read_dir(path)
+        .with_context(|| format!("reading `{}`", path.display()))?
+        .next()
+        .transpose()?
+        .is_none()
+    {
+        return Ok(());
+    }
+
+    bail!(
+        "repository path `{}` must be empty or not exist",
+        path.display()
+    );
+}
+
 fn write_atomic(path: &Path, contents: &str) -> Result<()> {
     let parent = path
         .parent()
@@ -558,6 +625,47 @@ mod tests {
         assert!(!opened.sync_enabled());
         assert!(opened.root().join("config.toml").exists());
         assert!(opened.list_months().unwrap().is_empty());
+    }
+
+    #[test]
+    fn clone_from_remote_opens_repo_gate() {
+        let temp = tempdir().unwrap();
+        let remote = temp.path().join("remote.git");
+        git(
+            temp.path(),
+            &[
+                "init",
+                "--bare",
+                "--initial-branch=main",
+                remote.to_str().unwrap(),
+            ],
+        );
+
+        let source = temp.path().join("source");
+        Repository::init(&source, Some(remote.to_str().unwrap())).unwrap();
+
+        let clone = temp.path().join("clone");
+        Repository::clone_from_remote(remote.to_str().unwrap(), &clone).unwrap();
+
+        let opened = Repository::open(&clone).unwrap();
+        assert!(opened.sync_enabled());
+        assert!(opened.root().join("config.toml").exists());
+    }
+
+    #[test]
+    fn clone_from_remote_rejects_non_empty_target() {
+        let temp = tempdir().unwrap();
+        let target = temp.path().join("clone");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("note.txt"), "occupied").unwrap();
+
+        let error =
+            Repository::clone_from_remote("https://github.com/example/example.git", &target)
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("repository path")
+                && error.to_string().contains("must be empty or not exist")
+        );
     }
 
     #[test]

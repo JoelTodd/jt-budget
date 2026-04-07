@@ -15,6 +15,8 @@ First use:
 jt-budget setup
 ```
 
+GitHub-first setup expects `git` and GitHub CLI (`gh`). Local-only setup and advanced local adoption still exist inside the setup flow.
+
 Normal launch:
 
 ```bash
@@ -33,7 +35,7 @@ From this workspace checkout, `.cargo/config.toml` adds:
 cargo budget
 ```
 
-`setup` creates or adopts a budget data repo, optionally configures `origin`, validates it through the normal repo gate, and saves it as the default launch target. If no default has been configured yet, plain `jt-budget` starts that setup flow interactively. `init` and `run --repo ...` still exist as compatibility commands. After startup, sync remains strict and uses `git pull --ff-only` plus blocking push failures. Each confirmed guided step or edited field autosaves the month file, commits it, and pushes when a remote is configured. Month files live in `months/YYYY-MM.toml`; cached derived values are written for inspection but recomputed on load.
+`setup` now defaults to a GitHub-first flow: it can create a new private GitHub-backed budget repo, connect this machine to an existing GitHub budget repo, or fall back to local-only or advanced local adoption. During GitHub setup it uses `gh` for authentication and repo creation, configures Git credentials for later plain `git pull` and `git push`, validates the resulting repo through the normal repository gate, and only then saves it as the default launch target. If no default has been configured yet, plain `jt-budget` starts that setup flow interactively. `init` and `run --repo ...` still exist as compatibility commands. After startup, sync remains strict and uses `git pull --ff-only` plus blocking push failures. Each confirmed guided step or edited field autosaves the month file, commits it, and pushes when a remote is configured. Month files live in `months/YYYY-MM.toml`; cached derived values are written for inspection but recomputed on load.
 
 The bundled Base24 palette lives in [`budget-app/theme.toml`](budget-app/theme.toml).
 

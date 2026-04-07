@@ -71,6 +71,11 @@ fn run_default_launch(cli_repo: Option<PathBuf>, locator: &RepoLocator) -> Resul
                 &SetupArgs {
                     repo: None,
                     remote: None,
+                    github_create: false,
+                    github_connect: false,
+                    local_only: false,
+                    adopt_local: false,
+                    github_repo: None,
                     no_open: false,
                 },
             )?;
@@ -218,6 +223,38 @@ mod tests {
             Some(Command::Setup(SetupArgs {
                 repo: Some("/tmp/budget".into()),
                 remote: None,
+                github_create: false,
+                github_connect: false,
+                local_only: false,
+                adopt_local: false,
+                github_repo: None,
+                no_open: false,
+            }))
+        );
+    }
+
+    #[test]
+    fn cli_parses_github_connect_setup_subcommand() {
+        let cli = Cli::try_parse_from([
+            "jt-budget",
+            "setup",
+            "--github-connect",
+            "--github-repo",
+            "openai/budget",
+            "--repo",
+            "/tmp/budget",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.command,
+            Some(Command::Setup(SetupArgs {
+                repo: Some("/tmp/budget".into()),
+                remote: None,
+                github_create: false,
+                github_connect: true,
+                local_only: false,
+                adopt_local: false,
+                github_repo: Some("openai/budget".to_owned()),
                 no_open: false,
             }))
         );
