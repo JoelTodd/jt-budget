@@ -4,6 +4,8 @@
 
 Define the app's runtime states and allowed transitions so control flow stays explicit and predictable.
 
+Repo discovery and first-run setup happen before this TUI lifecycle starts. Once a repo path has been chosen, launch still enters `Bootstrap` and must pass through `RepositoryGate` before normal use.
+
 ---
 
 ## Top-Level States

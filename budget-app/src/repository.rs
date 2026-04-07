@@ -72,19 +72,75 @@ impl Repository {
         run_git(root, ["init", "-b", DEFAULT_BRANCH])?;
         run_git(root, ["config", "user.name", "jt-budget"])?;
         run_git(root, ["config", "user.email", "jt-budget@example.invalid"])?;
-        if let Some(remote) = remote {
-            run_git(root, ["remote", "add", "origin", remote])?;
-        }
         run_git(root, ["add", "."])?;
         run_git(root, ["commit", "-m", "Initialise budget repository"])?;
-        if remote.is_some() {
-            run_git(root, ["push", "origin", DEFAULT_BRANCH])
-                .context("publishing initial repository state")?;
-            configure_branch_upstream(root, "origin", DEFAULT_BRANCH)
-                .context("configuring branch upstream after init")?;
-            verify_branch_upstream(root).context("verifying branch upstream after init")?;
+        if let Some(remote) = remote {
+            Self::connect_remote(root, remote).context("publishing initial repository state")?;
         }
 
+        Ok(())
+    }
+
+    /// Reports whether a path already looks like a jt-budget repository root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path contains a malformed config or Git command
+    /// execution fails while probing the repository layout.
+    pub fn looks_like_budget_repo(root: &Path) -> Result<bool> {
+        if !root.is_dir() {
+            return Ok(false);
+        }
+
+        let config_path = root.join("config.toml");
+        let months_dir = root.join("months");
+        if !config_path.is_file() || !months_dir.is_dir() || !is_git_work_tree(root)? {
+            return Ok(false);
+        }
+
+        let config_text = fs::read_to_string(&config_path)
+            .with_context(|| format!("reading `{}`", config_path.display()))?;
+        let config: AppConfig = toml::from_str(&config_text)
+            .with_context(|| format!("parsing `{}`", config_path.display()))?;
+        config
+            .validate()
+            .with_context(|| format!("validating `{}`", config_path.display()))?;
+        Ok(true)
+    }
+
+    /// Reports whether the repository has an `origin` remote configured.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when Git cannot inspect the repository config.
+    pub fn has_origin_remote(root: &Path) -> Result<bool> {
+        has_remote_named(root, "origin")
+    }
+
+    /// Configures or verifies the `origin` remote and ensures `main` tracks it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `origin` already points elsewhere or the remote
+    /// cannot be reached and published cleanly.
+    pub fn connect_remote(root: &Path, remote: &str) -> Result<()> {
+        ensure!(!remote.trim().is_empty(), "remote cannot be empty");
+        run_git(root, ["rev-parse", "--is-inside-work-tree"])
+            .context("verifying repository before remote setup")?;
+
+        if has_remote_named(root, "origin")? {
+            let existing_remote = remote_url(root, "origin")?;
+            ensure!(
+                existing_remote == remote,
+                "repository already has origin set to `{existing_remote}`"
+            );
+        } else {
+            run_git(root, ["remote", "add", "origin", remote]).context("adding origin remote")?;
+        }
+
+        run_git(root, ["push", "-u", "origin", DEFAULT_BRANCH])
+            .context("publishing repository state")?;
+        verify_branch_upstream(root).context("verifying branch upstream after remote setup")?;
         Ok(())
     }
 
@@ -353,15 +409,6 @@ fn run_git_slice(root: &Path, args: &[&str]) -> Result<String> {
     );
 }
 
-fn configure_branch_upstream(root: &Path, remote: &str, branch: &str) -> Result<()> {
-    let branch_remote_key = format!("branch.{branch}.remote");
-    let branch_merge_key = format!("branch.{branch}.merge");
-    let merge_ref = format!("refs/heads/{branch}");
-    run_git(root, ["config", &branch_remote_key, remote])?;
-    run_git(root, ["config", &branch_merge_key, &merge_ref])?;
-    Ok(())
-}
-
 fn verify_branch_upstream(root: &Path) -> Result<String> {
     run_git(
         root,
@@ -372,6 +419,29 @@ fn verify_branch_upstream(root: &Path) -> Result<String> {
             "@{upstream}",
         ],
     )
+}
+
+fn is_git_work_tree(root: &Path) -> Result<bool> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(root)
+        .output()
+        .with_context(|| {
+            format!(
+                "running `git rev-parse --is-inside-work-tree` in `{}`",
+                root.display()
+            )
+        })?;
+    if output.status.success() {
+        return Ok(true);
+    }
+    if output.status.code().is_some() {
+        return Ok(false);
+    }
+    bail!(
+        "git rev-parse --is-inside-work-tree failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
 }
 
 fn has_remote_named(root: &Path, remote: &str) -> Result<bool> {
@@ -397,6 +467,11 @@ fn has_remote_named(root: &Path, remote: &str) -> Result<bool> {
         remote_key,
         String::from_utf8_lossy(&output.stderr).trim()
     );
+}
+
+fn remote_url(root: &Path, remote: &str) -> Result<String> {
+    let remote_key = format!("remote.{remote}.url");
+    run_git(root, ["config", "--get", &remote_key])
 }
 
 fn write_atomic(path: &Path, contents: &str) -> Result<()> {
@@ -689,6 +764,41 @@ mod tests {
         assert!(!repo_path.join("months/2026-03.toml").exists());
         let log = git_capture(&repo_path, &["log", "--oneline", "--max-count", "1"]);
         assert!(log.contains("Delete budget month 2026-03"));
+    }
+
+    #[test]
+    fn connect_remote_publishes_existing_local_repo() {
+        let temp = tempdir().unwrap();
+        let remote = temp.path().join("remote.git");
+        git(temp.path(), &["init", "--bare", remote.to_str().unwrap()]);
+
+        let repo_path = temp.path().join("budget");
+        Repository::init(&repo_path, None).unwrap();
+
+        Repository::connect_remote(&repo_path, remote.to_str().unwrap()).unwrap();
+
+        assert!(Repository::has_origin_remote(&repo_path).unwrap());
+        assert_eq!(
+            git_capture(
+                &repo_path,
+                &[
+                    "rev-parse",
+                    "--abbrev-ref",
+                    "--symbolic-full-name",
+                    "@{upstream}"
+                ],
+            ),
+            "origin/main"
+        );
+    }
+
+    #[test]
+    fn looks_like_budget_repo_accepts_initialised_repository() {
+        let temp = tempdir().unwrap();
+        let repo_path = temp.path().join("budget");
+        Repository::init(&repo_path, None).unwrap();
+
+        assert!(Repository::looks_like_budget_repo(&repo_path).unwrap());
     }
 
     fn git(root: &Path, args: &[&str]) {

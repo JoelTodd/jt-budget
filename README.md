@@ -9,19 +9,31 @@ Rust workspace for a terminal-first monthly budgeting app.
 
 ## Run
 
-Initialise a budget data repo:
+First use:
 
 ```bash
-cargo run -p jt-budget -- init /path/to/budget-repo --remote /path/to/remote.git
+jt-budget setup
 ```
 
-Run the app:
+Normal launch:
 
 ```bash
-cargo run -p jt-budget -- run --repo /path/to/budget-repo
+jt-budget
 ```
 
-`init` creates a ready-to-run data repo. With `--remote`, it publishes `main` and configures `origin/main` so `run` passes the repo gate immediately. Without a remote, the repo runs in local-only mode. After startup, sync remains strict and uses `git pull --ff-only` plus blocking push failures. Each confirmed guided step or edited field autosaves the month file, commits it, and pushes when a remote is configured. Month files live in `months/YYYY-MM.toml`; cached derived values are written for inspection but recomputed on load.
+One-shot or scripted launch:
+
+```bash
+jt-budget --repo /path/to/budget-repo
+```
+
+From this workspace checkout, `.cargo/config.toml` adds:
+
+```bash
+cargo budget
+```
+
+`setup` creates or adopts a budget data repo, optionally configures `origin`, validates it through the normal repo gate, and saves it as the default launch target. If no default has been configured yet, plain `jt-budget` starts that setup flow interactively. `init` and `run --repo ...` still exist as compatibility commands. After startup, sync remains strict and uses `git pull --ff-only` plus blocking push failures. Each confirmed guided step or edited field autosaves the month file, commits it, and pushes when a remote is configured. Month files live in `months/YYYY-MM.toml`; cached derived values are written for inspection but recomputed on load.
 
 The bundled Base24 palette lives in [`budget-app/theme.toml`](budget-app/theme.toml).
 

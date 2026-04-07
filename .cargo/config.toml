@@ -1,0 +1,2 @@
+[alias]
+budget = "run -p jt-budget --"

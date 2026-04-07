@@ -9,6 +9,7 @@ anyhow.workspace = true
 budget-core = { path = "../budget-core" }
 clap.workspace = true
 crossterm.workspace = true
+dirs.workspace = true
 fs4.workspace = true
 ratatui.workspace = true
 serde.workspace = true
