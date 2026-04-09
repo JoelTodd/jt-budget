@@ -4,6 +4,9 @@ use crate::error::BudgetError;
 use crate::money::Money;
 
 /// The application configuration stored in the budget repository.
+///
+/// The list order is significant because drafts, calculations, and the TUI all
+/// preserve it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub validation_tolerance_minor: i64,
@@ -80,7 +83,10 @@ impl AppConfig {
     }
 }
 
-/// Defines an editable account row and how its sign should be interpreted.
+/// Stable account definition used in config files and month documents.
+///
+/// The `kind` decides how the user's always-positive entry is normalised for
+/// calculations.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountConfig {
     pub id: String,
@@ -127,11 +133,13 @@ impl AccountConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AccountKind {
+    /// A positive balance that increases net position.
     Asset,
+    /// A positive entered balance that is treated as a negative contribution.
     Liability,
 }
 
-/// Static configuration for a named savings pot.
+/// Static savings-pot definition used for draft defaults and validation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavingsPotConfig {
     pub id: String,
@@ -149,7 +157,7 @@ impl SavingsPotConfig {
     }
 }
 
-/// Static configuration for a next-month earmark.
+/// Static next-month earmark definition used for draft defaults and validation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EarmarkConfig {
     pub id: String,

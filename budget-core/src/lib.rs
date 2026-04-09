@@ -1,8 +1,12 @@
 //! Core budgeting domain logic and persistence models.
 
+/// Repository configuration types and validation rules.
 pub mod config;
+/// Domain error types for parsing, validation, and serialisation.
 pub mod error;
+/// Money parsing, formatting, and minor-unit utilities.
 pub mod money;
+/// Month identifiers, persisted documents, and derived calculations.
 pub mod month;
 
 pub use config::{AccountConfig, AccountKind, AppConfig, EarmarkConfig, SavingsPotConfig};

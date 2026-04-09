@@ -1,6 +1,7 @@
 mod calculation;
 mod document;
 mod id;
+/// Compact summary projection types for UI-facing month overviews.
 pub mod projection;
 
 pub use calculation::{

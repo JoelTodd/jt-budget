@@ -43,11 +43,16 @@ pub struct AccountRow {
     pub id: String,
     pub label: String,
     pub kind: AccountKind,
+    /// User-entered balance before asset or liability sign rules are applied.
     pub raw_balance: Money,
+    /// Signed balance used by totals, validation, and summaries.
     pub normalised_balance: Money,
 }
 
 /// Derived timing-adjustment values used by the UI and validation logic.
+///
+/// The `*_raw` fields mirror what the user typed, while the `*_effect` fields
+/// are the signed values that flow into totals.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimingCalculation {
     pub investment_not_yet_sent_raw: Money,

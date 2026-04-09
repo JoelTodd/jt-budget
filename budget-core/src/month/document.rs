@@ -10,6 +10,9 @@ use super::calculation::{CalculatedMonth, calculate_month};
 use super::id::MonthId;
 
 /// Persisted editable month document.
+///
+/// The maps are keyed by stable config identifiers. `derived` is only an
+/// inspectable cache and must never be trusted as input.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MonthDocument {
     pub month: MonthId,
@@ -112,18 +115,25 @@ impl MonthDocument {
 /// Raw user-entered timing adjustments.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimingAdjustments {
+    /// Amount transferred out for investment but still present in the account balance.
     pub investment_not_yet_sent_raw: i64,
+    /// Signed correction for last month's general-spending over or underspend.
     pub previous_month_spending_correction_raw: i64,
 }
 
 /// Persisted state for a single savings pot row.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavingsPotState {
+    /// Confirmed balance carried in from the previous month. This stays non-negative.
     pub carried_over: i64,
+    /// Signed change applied during the current month.
     pub monthly_change: i64,
 }
 
 /// Metadata stored alongside the editable month data.
+///
+/// Timestamps are written in RFC3339 so the files stay inspectable and stable
+/// in diffs.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MonthMeta {
     pub created_at: Option<String>,
@@ -131,6 +141,9 @@ pub struct MonthMeta {
 }
 
 /// Convenience cache persisted for humans inspecting the repository.
+///
+/// Every field is a recalculated minor-unit total mirrored from
+/// [`CalculatedMonth`], and callers must ignore it when loading data.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DerivedCache {
     pub accounts_subtotal_minor: i64,
