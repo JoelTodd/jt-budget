@@ -21,40 +21,35 @@ pub(super) fn editor_route_with_state(
     focus_index: usize,
     interaction: InteractionState,
 ) -> Route {
-    let mut document = MonthDocument::new_draft(MonthId::parse("2026-04").unwrap(), config, None);
-    document.accounts.insert("current".to_owned(), 250_000);
-    document.accounts.insert("cash_isa".to_owned(), 35_500);
-    document.accounts.insert("amex_credit".to_owned(), 20_400);
-    document
-        .accounts
-        .insert("nationwide_credit".to_owned(), 6_000);
-    document
-        .next_month_earmarks
-        .insert("subscriptions".to_owned(), 12_500);
-    document
-        .next_month_earmarks
-        .insert("general_spending".to_owned(), 39_900);
-    document.savings_pots.insert(
-        "fun_expensive_stuff".to_owned(),
-        SavingsPotState {
-            carried_over: 82_000,
-            monthly_change: -2_500,
-        },
-    );
-    document.savings_pots.insert(
-        "long_term_savings".to_owned(),
-        SavingsPotState {
-            carried_over: 15_500,
-            monthly_change: 6_000,
-        },
-    );
-    document.savings_pots.insert(
-        "label".to_owned(),
-        SavingsPotState {
-            carried_over: 2_500,
-            monthly_change: 25_000,
-        },
-    );
+    let document = sample_month_document(config, "2026-04", |document| {
+        document
+            .next_month_earmarks
+            .insert("subscriptions".to_owned(), 12_500);
+        document
+            .next_month_earmarks
+            .insert("general_spending".to_owned(), 39_900);
+        document.savings_pots.insert(
+            "fun_expensive_stuff".to_owned(),
+            SavingsPotState {
+                carried_over: 82_000,
+                monthly_change: -2_500,
+            },
+        );
+        document.savings_pots.insert(
+            "long_term_savings".to_owned(),
+            SavingsPotState {
+                carried_over: 15_500,
+                monthly_change: 6_000,
+            },
+        );
+        document.savings_pots.insert(
+            "label".to_owned(),
+            SavingsPotState {
+                carried_over: 2_500,
+                monthly_change: 25_000,
+            },
+        );
+    });
     let calculated = calculate_month(config, &document).unwrap();
     let fields = FieldId::editor_fields(config);
     let edit_buffer = (interaction == InteractionState::FieldEditing)
@@ -73,40 +68,35 @@ pub(super) fn editor_route_with_state(
 }
 
 pub(super) fn navigation_route(config: &AppConfig) -> Route {
-    let mut document = MonthDocument::new_draft(MonthId::parse("2026-08").unwrap(), config, None);
-    document.accounts.insert("current".to_owned(), 250_000);
-    document.accounts.insert("cash_isa".to_owned(), 35_500);
-    document.accounts.insert("amex_credit".to_owned(), 20_400);
-    document
-        .accounts
-        .insert("nationwide_credit".to_owned(), 6_000);
-    document
-        .next_month_earmarks
-        .insert("subscriptions".to_owned(), 2_500);
-    document
-        .next_month_earmarks
-        .insert("general_spending".to_owned(), 25_000);
-    document.savings_pots.insert(
-        "fun_expensive_stuff".to_owned(),
-        SavingsPotState {
-            carried_over: 13_000,
-            monthly_change: -2_500,
-        },
-    );
-    document.savings_pots.insert(
-        "long_term_savings".to_owned(),
-        SavingsPotState {
-            carried_over: 37_500,
-            monthly_change: 15_500,
-        },
-    );
-    document.savings_pots.insert(
-        "label".to_owned(),
-        SavingsPotState {
-            carried_over: 82_000,
-            monthly_change: 6_000,
-        },
-    );
+    let mut document = sample_month_document(config, "2026-08", |document| {
+        document
+            .next_month_earmarks
+            .insert("subscriptions".to_owned(), 2_500);
+        document
+            .next_month_earmarks
+            .insert("general_spending".to_owned(), 25_000);
+        document.savings_pots.insert(
+            "fun_expensive_stuff".to_owned(),
+            SavingsPotState {
+                carried_over: 13_000,
+                monthly_change: -2_500,
+            },
+        );
+        document.savings_pots.insert(
+            "long_term_savings".to_owned(),
+            SavingsPotState {
+                carried_over: 37_500,
+                monthly_change: 15_500,
+            },
+        );
+        document.savings_pots.insert(
+            "label".to_owned(),
+            SavingsPotState {
+                carried_over: 82_000,
+                monthly_change: 6_000,
+            },
+        );
+    });
     document.meta.updated_at = Some("2026-03-31T14:30:06.464168849Z".to_owned());
     let calculated = calculate_month(config, &document).unwrap();
     Route::Navigation(NavigationState {
@@ -138,6 +128,22 @@ pub(super) fn guided_route(config: &AppConfig) -> Route {
         persistence: PersistenceState::Clean,
         sync: SyncState::Synced,
     })
+}
+
+fn sample_month_document(
+    config: &AppConfig,
+    month: &str,
+    customise: impl FnOnce(&mut MonthDocument),
+) -> MonthDocument {
+    let mut document = MonthDocument::new_draft(MonthId::parse(month).unwrap(), config, None);
+    document.accounts.insert("current".to_owned(), 250_000);
+    document.accounts.insert("cash_isa".to_owned(), 35_500);
+    document.accounts.insert("amex_credit".to_owned(), 20_400);
+    document
+        .accounts
+        .insert("nationwide_credit".to_owned(), 6_000);
+    customise(&mut document);
+    document
 }
 
 pub(super) fn draw_route(

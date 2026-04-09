@@ -11,6 +11,19 @@ use super::theme::{
 };
 use crate::state::{InteractionState, NavigationState, Route};
 
+fn assert_snapshot_for_size(
+    snapshot_name: &str,
+    route: &Route,
+    config: &AppConfig,
+    width: u16,
+    height: u16,
+) {
+    insta::assert_snapshot!(
+        snapshot_name,
+        buffer_to_string(draw_route(route, Some(config), width, height))
+    );
+}
+
 #[test]
 fn navigation_snapshot() {
     let config = AppConfig::default_mvp();
@@ -23,21 +36,21 @@ fn navigation_snapshot() {
 fn navigation_snapshot_80x24() {
     let config = AppConfig::default_mvp();
     let route = navigation_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 80, 24)));
+    assert_snapshot_for_size("navigation_snapshot_80x24", &route, &config, 80, 24);
 }
 
 #[test]
 fn navigation_snapshot_105x48() {
     let config = AppConfig::default_mvp();
     let route = navigation_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 105, 48)));
+    assert_snapshot_for_size("navigation_snapshot_105x48", &route, &config, 105, 48);
 }
 
 #[test]
 fn navigation_snapshot_210x48() {
     let config = AppConfig::default_mvp();
     let route = navigation_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 210, 48)));
+    assert_snapshot_for_size("navigation_snapshot_210x48", &route, &config, 210, 48);
 }
 
 #[test]
@@ -112,21 +125,21 @@ fn editor_snapshot() {
 fn editor_snapshot_80x24() {
     let config = AppConfig::default_mvp();
     let route = editor_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 80, 24)));
+    assert_snapshot_for_size("editor_snapshot_80x24", &route, &config, 80, 24);
 }
 
 #[test]
 fn editor_snapshot_105x48() {
     let config = AppConfig::default_mvp();
     let route = editor_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 105, 48)));
+    assert_snapshot_for_size("editor_snapshot_105x48", &route, &config, 105, 48);
 }
 
 #[test]
 fn editor_snapshot_210x48() {
     let config = AppConfig::default_mvp();
     let route = editor_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 210, 48)));
+    assert_snapshot_for_size("editor_snapshot_210x48", &route, &config, 210, 48);
 }
 
 #[test]
@@ -366,21 +379,21 @@ fn guided_snapshot() {
 fn guided_snapshot_80x24() {
     let config = AppConfig::default_mvp();
     let route = guided_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 80, 24)));
+    assert_snapshot_for_size("guided_snapshot_80x24", &route, &config, 80, 24);
 }
 
 #[test]
 fn guided_snapshot_105x48() {
     let config = AppConfig::default_mvp();
     let route = guided_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 105, 48)));
+    assert_snapshot_for_size("guided_snapshot_105x48", &route, &config, 105, 48);
 }
 
 #[test]
 fn guided_snapshot_210x48() {
     let config = AppConfig::default_mvp();
     let route = guided_route(&config);
-    insta::assert_snapshot!(buffer_to_string(draw_route(&route, Some(&config), 210, 48)));
+    assert_snapshot_for_size("guided_snapshot_210x48", &route, &config, 210, 48);
 }
 
 #[test]

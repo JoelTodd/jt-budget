@@ -4,27 +4,30 @@
 //! operations may save locally first, but failures to pull or push are surfaced
 //! as blocking states rather than silently ignored.
 
-use std::ffi::OsStr;
+mod fs_store;
+mod git_repo;
+mod month_store;
+
 use std::fs::{self, File};
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use anyhow::{Context, Result, anyhow, bail, ensure};
-use budget_core::{AppConfig, CalculatedMonth, MonthDocument, MonthId, calculate_month};
+use anyhow::{Context, Result, ensure};
+use budget_core::{AppConfig, CalculatedMonth, MonthDocument, MonthId};
 use fs4::fs_std::FileExt;
-use tempfile::NamedTempFile;
-use tracing::{info, warn};
+use tracing::info;
 
-const DEFAULT_BRANCH: &str = "main";
+use self::fs_store::ensure_directory_missing_or_empty;
+use self::git_repo::{GitRepo, clone_from_remote};
+use self::month_store::MonthStore;
 
 #[derive(Debug)]
 pub struct Repository {
     root: PathBuf,
-    months_dir: PathBuf,
-    _meta_dir: PathBuf,
     config: AppConfig,
     sync_enabled: bool,
+    git: GitRepo,
+    months: MonthStore,
+    _meta_dir: PathBuf,
     #[allow(dead_code)]
     lock_handle: File,
 }
@@ -40,6 +43,12 @@ pub struct LoadedMonth {
 pub enum SyncOutcome {
     Synced,
     PushFailed(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PushPolicy {
+    Strict,
+    ReportOnly,
 }
 
 impl Repository {
@@ -65,11 +74,8 @@ impl Repository {
         fs::write(root.join(".gitignore"), "meta/app.lock\nmeta/app.log\n")
             .with_context(|| format!("writing .gitignore in `{}`", root.display()))?;
 
-        run_git(root, ["init", "-b", DEFAULT_BRANCH])?;
-        run_git(root, ["config", "user.name", "jt-budget"])?;
-        run_git(root, ["config", "user.email", "jt-budget@example.invalid"])?;
-        run_git(root, ["add", "."])?;
-        run_git(root, ["commit", "-m", "Initialise budget repository"])?;
+        let git = GitRepo::new(root.to_path_buf());
+        git.initialise_budget_repo()?;
         if let Some(remote) = remote {
             Self::connect_remote(root, remote).context("publishing initial repository state")?;
         }
@@ -86,28 +92,7 @@ impl Repository {
     pub fn clone_from_remote(remote: &str, target: &Path) -> Result<()> {
         ensure!(!remote.trim().is_empty(), "remote cannot be empty");
         ensure_directory_missing_or_empty(target)?;
-
-        let output = Command::new("git")
-            .arg("clone")
-            .arg("--origin")
-            .arg("origin")
-            .arg(remote)
-            .arg(target)
-            .output()
-            .with_context(|| {
-                format!(
-                    "running `git clone --origin origin {remote} {}`",
-                    target.display()
-                )
-            })?;
-        if output.status.success() {
-            return Ok(());
-        }
-
-        bail!(
-            "git clone failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        clone_from_remote(remote, target)
     }
 
     /// Reports whether a path already looks like a jt-budget repository root.
@@ -123,7 +108,7 @@ impl Repository {
 
         let config_path = root.join("config.toml");
         let months_dir = root.join("months");
-        if !config_path.is_file() || !months_dir.is_dir() || !is_git_work_tree(root)? {
+        if !config_path.is_file() || !months_dir.is_dir() || !GitRepo::is_work_tree(root)? {
             return Ok(false);
         }
 
@@ -143,7 +128,7 @@ impl Repository {
     ///
     /// Returns an error when Git cannot inspect the repository config.
     pub fn has_origin_remote(root: &Path) -> Result<bool> {
-        has_remote_named(root, "origin")
+        GitRepo::new(root.to_path_buf()).has_remote_named("origin")
     }
 
     /// Returns the configured `origin` remote URL when present.
@@ -152,8 +137,9 @@ impl Repository {
     ///
     /// Returns an error when Git cannot inspect the repository config.
     pub fn origin_remote_url(root: &Path) -> Result<Option<String>> {
-        if has_remote_named(root, "origin")? {
-            return Ok(Some(remote_url(root, "origin")?));
+        let git = GitRepo::new(root.to_path_buf());
+        if git.has_remote_named("origin")? {
+            return Ok(Some(git.remote_url("origin")?));
         }
         Ok(None)
     }
@@ -166,22 +152,24 @@ impl Repository {
     /// cannot be reached and published cleanly.
     pub fn connect_remote(root: &Path, remote: &str) -> Result<()> {
         ensure!(!remote.trim().is_empty(), "remote cannot be empty");
-        run_git(root, ["rev-parse", "--is-inside-work-tree"])
-            .context("verifying repository before remote setup")?;
+        let git = GitRepo::new(root.to_path_buf());
+        git.ensure_repository()?;
 
-        if has_remote_named(root, "origin")? {
-            let existing_remote = remote_url(root, "origin")?;
+        if git.has_remote_named("origin")? {
+            let existing_remote = git.remote_url("origin")?;
             ensure!(
                 existing_remote == remote,
                 "repository already has origin set to `{existing_remote}`"
             );
         } else {
-            run_git(root, ["remote", "add", "origin", remote]).context("adding origin remote")?;
+            git.add_remote("origin", remote)
+                .context("adding origin remote")?;
         }
 
-        run_git(root, ["push", "-u", "origin", DEFAULT_BRANCH])
+        git.push_default_branch_with_upstream("origin")
             .context("publishing repository state")?;
-        verify_branch_upstream(root).context("verifying branch upstream after remote setup")?;
+        git.verify_branch_upstream()
+            .context("verifying branch upstream after remote setup")?;
         Ok(())
     }
 
@@ -216,20 +204,24 @@ impl Repository {
             .lock_exclusive()
             .with_context(|| format!("acquiring lock on `{}`", lock_path.display()))?;
 
-        run_git(&root, ["rev-parse", "--is-inside-work-tree"])?;
+        let git = GitRepo::new(root.clone());
+        git.ensure_repository()?;
+
         let config_text = fs::read_to_string(root.join("config.toml"))
             .context("reading repository config.toml")?;
         let config: AppConfig = toml::from_str(&config_text).context("parsing config.toml")?;
         config.validate().context("validating config.toml")?;
         ensure!(months_dir.is_dir(), "`{}` is missing", months_dir.display());
-        let sync_enabled = has_remote_named(&root, "origin")?;
+        let sync_enabled = git.has_remote_named("origin")?;
+        let months = MonthStore::new(months_dir, config.clone());
 
         let repository = Self {
             root,
-            months_dir,
-            _meta_dir: meta_dir,
             config,
             sync_enabled,
+            git,
+            months,
+            _meta_dir: meta_dir,
             lock_handle,
         };
         repository.pull_latest()?;
@@ -253,24 +245,12 @@ impl Repository {
 
     /// Loads and recalculates all month documents in reverse chronological order.
     pub fn list_months(&self) -> Result<Vec<LoadedMonth>> {
-        let mut months = Vec::new();
-        for entry in fs::read_dir(&self.months_dir)
-            .with_context(|| format!("reading `{}`", self.months_dir.display()))?
-        {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension() != Some(OsStr::new("toml")) {
-                continue;
-            }
-            months.push(self.load_month(&path)?);
-        }
-        months.sort_by(|left, right| right.document.month.cmp(&left.document.month));
-        Ok(months)
+        self.months.list_months()
     }
 
     /// Loads a single month by its stable month identifier.
     pub fn load_month_by_id(&self, month: MonthId) -> Result<LoadedMonth> {
-        self.load_month(&self.months_dir.join(month.file_name()))
+        self.months.load_month_by_id(month)
     }
 
     /// Builds a new draft month document without writing it yet.
@@ -280,67 +260,41 @@ impl Repository {
     /// Returns an error if the target month already exists or an earlier month
     /// cannot be loaded while determining carry-forward balances.
     pub fn create_month_draft(&self, month: MonthId) -> Result<MonthDocument> {
-        let path = self.months_dir.join(month.file_name());
-        ensure!(!path.exists(), "month `{month}` already exists");
-        let previous = self
-            .list_months()?
-            .into_iter()
-            .filter(|entry| entry.document.month < month)
-            .max_by_key(|entry| entry.document.month);
-        Ok(MonthDocument::new_draft(
-            month,
-            &self.config,
-            previous.as_ref().map(|entry| &entry.calculated),
-        ))
+        self.months.create_month_draft(month)
     }
 
     /// Persists a month, commits the change, and pushes it when sync is enabled.
     pub fn save_month(&self, document: &mut MonthDocument) -> Result<()> {
-        let path = self.months_dir.join(document.month.file_name());
-        document.stamp_updated_now();
-        write_atomic(&path, &document.to_pretty_toml(&self.config)?)?;
-        self.commit_and_push_month(document.month)
+        self.months.write_month(document)?;
+        self.finalise_local_mutation(
+            &[self.relative_month_path(document.month)],
+            &format!("Update budget month {}", document.month),
+            PushPolicy::Strict,
+        )?;
+        Ok(())
     }
 
     /// Renames a month file, commits the local rename, and then attempts to push.
     pub fn rename_month(&self, source: MonthId, target: MonthId) -> Result<SyncOutcome> {
-        ensure!(
-            source != target,
-            "month `{source}` is already named `{target}`"
-        );
-        let source_path = self.months_dir.join(source.file_name());
-        let target_path = self.months_dir.join(target.file_name());
-        ensure!(source_path.exists(), "month `{source}` does not exist");
-        ensure!(!target_path.exists(), "month `{target}` already exists");
-
-        let mut document = self.load_month(&source_path)?.document;
-        document.month = target;
-        document.stamp_updated_now();
-        write_atomic(&target_path, &document.to_pretty_toml(&self.config)?)?;
-        fs::remove_file(&source_path)
-            .with_context(|| format!("removing old month file `{}`", source_path.display()))?;
-
-        self.commit_paths(
+        self.months.rename_month(source, target)?;
+        self.finalise_local_mutation(
             &[
-                PathBuf::from("months").join(source.file_name()),
-                PathBuf::from("months").join(target.file_name()),
+                self.relative_month_path(source),
+                self.relative_month_path(target),
             ],
             &format!("Rename budget month {source} to {target}"),
-        )?;
-        self.push_after_local_commit()
+            PushPolicy::ReportOnly,
+        )
     }
 
     /// Deletes a month file, commits the local deletion, and then attempts to push.
     pub fn delete_month(&self, month: MonthId) -> Result<SyncOutcome> {
-        let path = self.months_dir.join(month.file_name());
-        ensure!(path.exists(), "month `{month}` does not exist");
-        fs::remove_file(&path)
-            .with_context(|| format!("removing month file `{}`", path.display()))?;
-        self.commit_paths(
-            &[PathBuf::from("months").join(month.file_name())],
+        self.months.delete_month(month)?;
+        self.finalise_local_mutation(
+            &[self.relative_month_path(month)],
             &format!("Delete budget month {month}"),
-        )?;
-        self.push_after_local_commit()
+            PushPolicy::ReportOnly,
+        )
     }
 
     /// Retries a push for changes that were already committed locally.
@@ -358,59 +312,35 @@ impl Repository {
             return Ok(());
         }
         info!("running repository gate for {}", self.root.display());
-        verify_branch_upstream(&self.root).context("checking branch upstream")?;
-        run_git(&self.root, ["pull", "--ff-only"]).context("pulling latest budget data")?;
+        self.git
+            .verify_branch_upstream()
+            .context("checking branch upstream")?;
+        self.git
+            .pull_ff_only()
+            .context("pulling latest budget data")?;
         Ok(())
     }
 
-    fn load_month(&self, path: &Path) -> Result<LoadedMonth> {
-        let text = fs::read_to_string(path)
-            .with_context(|| format!("reading month file `{}`", path.display()))?;
-        let document: MonthDocument =
-            toml::from_str(&text).with_context(|| format!("parsing `{}`", path.display()))?;
-        let calculated = calculate_month(&self.config, &document)
-            .with_context(|| format!("recomputing derived values for `{}`", path.display()))?;
-        Ok(LoadedMonth {
-            path: path.to_path_buf(),
-            document,
-            calculated,
-        })
+    fn relative_month_path(&self, month: MonthId) -> PathBuf {
+        PathBuf::from("months").join(month.file_name())
     }
 
-    fn commit_and_push_month(&self, month: MonthId) -> Result<()> {
-        let relative = PathBuf::from("months").join(month.file_name());
-        self.commit_paths(&[relative], &format!("Update budget month {month}"))?;
-        self.push_committed_changes()
-    }
-
-    fn commit_paths(&self, relative_paths: &[PathBuf], message: &str) -> Result<()> {
-        let relative_text = relative_paths
-            .iter()
-            .map(|path| {
-                path.to_str()
-                    .ok_or_else(|| anyhow!("path `{}` is not valid utf-8", path.display()))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        let mut args = vec!["add", "-A"];
-        args.extend(relative_text.iter().copied());
-        run_git_slice(&self.root, &args).context("staging repository changes")?;
-
-        let status = Command::new("git")
-            .args(["diff", "--cached", "--quiet", "--exit-code"])
-            .current_dir(&self.root)
-            .status()
-            .context("checking staged diff")?;
-        if status.success() {
-            warn!(
-                "no staged diff for {:?}; pushing existing commits if needed",
-                relative_paths
-            );
-        } else {
-            run_git(&self.root, ["commit", "-m", message])
-                .context("committing repository changes")?;
+    fn finalise_local_mutation(
+        &self,
+        relative_paths: &[PathBuf],
+        message: &str,
+        push_policy: PushPolicy,
+    ) -> Result<SyncOutcome> {
+        self.git
+            .stage_and_commit_paths(relative_paths, message)
+            .context("staging repository changes")?;
+        match push_policy {
+            PushPolicy::Strict => {
+                self.push_committed_changes()?;
+                Ok(SyncOutcome::Synced)
+            }
+            PushPolicy::ReportOnly => self.push_after_local_commit(),
         }
-        Ok(())
     }
 
     fn push_after_local_commit(&self) -> Result<SyncOutcome> {
@@ -422,148 +352,12 @@ impl Repository {
 
     fn push_committed_changes(&self) -> Result<()> {
         if self.sync_enabled {
-            run_git(&self.root, ["push"]).context("pushing repository changes")?;
+            self.git.push().context("pushing repository changes")?;
         } else {
             info!("no origin remote configured; leaving repository changes committed locally");
         }
         Ok(())
     }
-}
-
-fn run_git<const N: usize>(root: &Path, args: [&str; N]) -> Result<String> {
-    run_git_slice(root, &args)
-}
-
-fn run_git_slice(root: &Path, args: &[&str]) -> Result<String> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .with_context(|| format!("running `git {}` in `{}`", args.join(" "), root.display()))?;
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned());
-    }
-    bail!(
-        "git {} failed: {}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-}
-
-fn verify_branch_upstream(root: &Path) -> Result<String> {
-    run_git(
-        root,
-        [
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-        ],
-    )
-}
-
-fn is_git_work_tree(root: &Path) -> Result<bool> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .current_dir(root)
-        .output()
-        .with_context(|| {
-            format!(
-                "running `git rev-parse --is-inside-work-tree` in `{}`",
-                root.display()
-            )
-        })?;
-    if output.status.success() {
-        return Ok(true);
-    }
-    if output.status.code().is_some() {
-        return Ok(false);
-    }
-    bail!(
-        "git rev-parse --is-inside-work-tree failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-}
-
-fn has_remote_named(root: &Path, remote: &str) -> Result<bool> {
-    let remote_key = format!("remote.{remote}.url");
-    let output = Command::new("git")
-        .args(["config", "--get", &remote_key])
-        .current_dir(root)
-        .output()
-        .with_context(|| {
-            format!(
-                "running `git config --get {remote_key}` in `{}`",
-                root.display()
-            )
-        })?;
-    if output.status.success() {
-        return Ok(true);
-    }
-    if output.status.code() == Some(1) {
-        return Ok(false);
-    }
-    bail!(
-        "git config --get {} failed: {}",
-        remote_key,
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-}
-
-fn remote_url(root: &Path, remote: &str) -> Result<String> {
-    let remote_key = format!("remote.{remote}.url");
-    run_git(root, ["config", "--get", &remote_key])
-}
-
-fn ensure_directory_missing_or_empty(path: &Path) -> Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-
-    ensure!(
-        path.is_dir(),
-        "repository path `{}` must be a directory",
-        path.display()
-    );
-
-    if fs::read_dir(path)
-        .with_context(|| format!("reading `{}`", path.display()))?
-        .next()
-        .transpose()?
-        .is_none()
-    {
-        return Ok(());
-    }
-
-    bail!(
-        "repository path `{}` must be empty or not exist",
-        path.display()
-    );
-}
-
-fn write_atomic(path: &Path, contents: &str) -> Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow!("path `{}` has no parent", path.display()))?;
-    let mut temp = NamedTempFile::new_in(parent)
-        .with_context(|| format!("creating temp file for `{}`", path.display()))?;
-    temp.write_all(contents.as_bytes())
-        .with_context(|| format!("writing temp file for `{}`", path.display()))?;
-    temp.flush()
-        .with_context(|| format!("flushing temp file for `{}`", path.display()))?;
-    // Sync both the file and its directory so the rename is durable before we
-    // tell higher layers that autosave succeeded.
-    temp.as_file()
-        .sync_all()
-        .with_context(|| format!("syncing temp file for `{}`", path.display()))?;
-    temp.persist(path)
-        .map_err(|error| anyhow!(error.error))
-        .with_context(|| format!("persisting `{}`", path.display()))?;
-    File::open(parent)
-        .with_context(|| format!("opening directory `{}` for sync", parent.display()))?
-        .sync_all()
-        .with_context(|| format!("syncing directory `{}`", parent.display()))?;
-    Ok(())
 }
 
 #[cfg(test)]

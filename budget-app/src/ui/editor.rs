@@ -1,14 +1,17 @@
+mod section_table;
+
 use budget_core::AccountKind;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::prelude::{Frame, Line, Modifier, Span};
-use ratatui::widgets::{Cell, Paragraph, Row, Table, Wrap};
+use ratatui::widgets::{Cell, Paragraph, Row, Wrap};
 
+use self::section_table::{SectionTableSpec, render_section_table};
 use super::layout::{EditorLayoutProfile, PanelChrome, section_height};
 use super::theme::{Tone, UiTheme, section_tone, status_value_style, validation_tone};
 use super::widgets::{
     amount_cell_with_style, combined_focus_state, field_focus_state, focused_row_style, hint_lines,
-    labelled_row_cell, panel_block, section_block, section_focus_state, selected_field,
-    status_line, styled_value_cell_with_tone, value_for_field,
+    labelled_row_cell, panel_block, section_focus_state, selected_field, status_line,
+    styled_value_cell_with_tone, value_for_field,
 };
 use crate::state::{EditorState, FieldId, SectionId};
 
@@ -328,46 +331,43 @@ fn render_accounts(
         ])
         .style(focused_row_style(focus, theme))
     });
-    let table = Table::new(
+    render_section_table(
+        frame,
+        area,
         rows,
-        if compact {
-            [
-                Constraint::Min(18),
-                Constraint::Length(2),
-                Constraint::Length(12),
-                Constraint::Length(12),
-            ]
-        } else {
-            [
-                Constraint::Min(18),
-                Constraint::Length(4),
-                Constraint::Length(14),
-                Constraint::Length(14),
-            ]
+        SectionTableSpec {
+            widths: if compact {
+                [
+                    Constraint::Min(18),
+                    Constraint::Length(2),
+                    Constraint::Length(12),
+                    Constraint::Length(12),
+                ]
+            } else {
+                [
+                    Constraint::Min(18),
+                    Constraint::Length(4),
+                    Constraint::Length(14),
+                    Constraint::Length(14),
+                ]
+            },
+            header: Row::new(vec![
+                Cell::from(if show_title { "" } else { "Account" }),
+                Cell::from(""),
+                Cell::from("Entered"),
+                Cell::from("Net"),
+            ]),
+            title: show_title.then_some("Accounts"),
+            subtotal: format!(
+                "Subtotal {}",
+                state.calculated.totals.accounts_subtotal.format()
+            ),
+            focus: section_focus_state(state, SectionId::Accounts),
+            tone: Tone::Accounts,
+            chrome,
         },
-    )
-    .header(
-        Row::new(vec![
-            Cell::from(if show_title { "" } else { "Account" }),
-            Cell::from(""),
-            Cell::from("Entered"),
-            Cell::from("Net"),
-        ])
-        .style(theme.emphasized_tone_style(Tone::Accounts)),
-    )
-    .style(theme.toned_panel_style(Tone::Accounts))
-    .block(section_block(
-        show_title.then_some("Accounts"),
-        format!(
-            "Subtotal {}",
-            state.calculated.totals.accounts_subtotal.format()
-        ),
-        section_focus_state(state, SectionId::Accounts),
-        Tone::Accounts,
-        chrome,
         theme,
-    ));
-    frame.render_widget(table, area);
+    );
 }
 
 fn render_timing(
@@ -417,35 +417,32 @@ fn render_timing(
         ])
         .style(focused_row_style(investment_focus, theme)),
     ];
-    let table = Table::new(
+    render_section_table(
+        frame,
+        area,
         rows,
-        [
-            Constraint::Min(if compact { 20 } else { 28 }),
-            Constraint::Length(14),
-            Constraint::Length(14),
-        ],
-    )
-    .header(
-        Row::new(vec![
-            Cell::from(if show_title { "" } else { "Adjustment" }),
-            Cell::from("Entered"),
-            Cell::from("Effect"),
-        ])
-        .style(theme.emphasized_tone_style(Tone::Timing)),
-    )
-    .style(theme.toned_panel_style(Tone::Timing))
-    .block(section_block(
-        show_title.then_some("Timing Adjustments"),
-        format!(
-            "Subtotal {}",
-            state.calculated.totals.timing_adjustments_subtotal.format()
-        ),
-        section_focus_state(state, SectionId::TimingAdjustments),
-        Tone::Timing,
-        chrome,
+        SectionTableSpec {
+            widths: [
+                Constraint::Min(if compact { 20 } else { 28 }),
+                Constraint::Length(14),
+                Constraint::Length(14),
+            ],
+            header: Row::new(vec![
+                Cell::from(if show_title { "" } else { "Adjustment" }),
+                Cell::from("Entered"),
+                Cell::from("Effect"),
+            ]),
+            title: show_title.then_some("Timing Adjustments"),
+            subtotal: format!(
+                "Subtotal {}",
+                state.calculated.totals.timing_adjustments_subtotal.format()
+            ),
+            focus: section_focus_state(state, SectionId::TimingAdjustments),
+            tone: Tone::Timing,
+            chrome,
+        },
         theme,
-    ));
-    frame.render_widget(table, area);
+    );
 }
 
 fn render_earmarks(
@@ -471,37 +468,34 @@ fn render_earmarks(
         ])
         .style(focused_row_style(focus, theme))
     });
-    let table = Table::new(
+    render_section_table(
+        frame,
+        area,
         rows,
-        [
-            Constraint::Min(if compact { 18 } else { 24 }),
-            Constraint::Length(14),
-        ],
-    )
-    .header(
-        Row::new(vec![
-            Cell::from(if show_title { "" } else { "Earmark" }),
-            Cell::from("Amount"),
-        ])
-        .style(theme.emphasized_tone_style(Tone::Earmarks)),
-    )
-    .style(theme.toned_panel_style(Tone::Earmarks))
-    .block(section_block(
-        show_title.then_some("Next Month Earmarks"),
-        format!(
-            "Subtotal {}",
-            state
-                .calculated
-                .totals
-                .next_month_earmarks_subtotal
-                .format()
-        ),
-        section_focus_state(state, SectionId::NextMonthEarmarks),
-        Tone::Earmarks,
-        chrome,
+        SectionTableSpec {
+            widths: [
+                Constraint::Min(if compact { 18 } else { 24 }),
+                Constraint::Length(14),
+            ],
+            header: Row::new(vec![
+                Cell::from(if show_title { "" } else { "Earmark" }),
+                Cell::from("Amount"),
+            ]),
+            title: show_title.then_some("Next Month Earmarks"),
+            subtotal: format!(
+                "Subtotal {}",
+                state
+                    .calculated
+                    .totals
+                    .next_month_earmarks_subtotal
+                    .format()
+            ),
+            focus: section_focus_state(state, SectionId::NextMonthEarmarks),
+            tone: Tone::Earmarks,
+            chrome,
+        },
         theme,
-    ));
-    frame.render_widget(table, area);
+    );
 }
 
 fn render_pots(
@@ -569,44 +563,41 @@ fn render_pots(
         .style(theme.bright_style().add_modifier(Modifier::BOLD)),
     );
 
-    let table = Table::new(
+    render_section_table(
+        frame,
+        area,
         rows,
-        if compact {
-            [
-                Constraint::Min(18),
-                Constraint::Length(12),
-                Constraint::Length(12),
-                Constraint::Length(12),
-            ]
-        } else {
-            [
-                Constraint::Min(18),
-                Constraint::Length(14),
-                Constraint::Length(14),
-                Constraint::Length(14),
-            ]
+        SectionTableSpec {
+            widths: if compact {
+                [
+                    Constraint::Min(18),
+                    Constraint::Length(12),
+                    Constraint::Length(12),
+                    Constraint::Length(12),
+                ]
+            } else {
+                [
+                    Constraint::Min(18),
+                    Constraint::Length(14),
+                    Constraint::Length(14),
+                    Constraint::Length(14),
+                ]
+            },
+            header: Row::new(vec![
+                Cell::from(if show_title { "" } else { "Pot" }),
+                Cell::from("Carried"),
+                Cell::from("Change"),
+                Cell::from("Final"),
+            ]),
+            title: show_title.then_some("Savings Pots"),
+            subtotal: format!(
+                "Subtotal {}",
+                state.calculated.totals.pots_final_total.format()
+            ),
+            focus: section_focus_state(state, SectionId::SavingsPots),
+            tone: Tone::Pots,
+            chrome,
         },
-    )
-    .header(
-        Row::new(vec![
-            Cell::from(if show_title { "" } else { "Pot" }),
-            Cell::from("Carried"),
-            Cell::from("Change"),
-            Cell::from("Final"),
-        ])
-        .style(theme.emphasized_tone_style(Tone::Pots)),
-    )
-    .style(theme.toned_panel_style(Tone::Pots))
-    .block(section_block(
-        show_title.then_some("Savings Pots"),
-        format!(
-            "Subtotal {}",
-            state.calculated.totals.pots_final_total.format()
-        ),
-        section_focus_state(state, SectionId::SavingsPots),
-        Tone::Pots,
-        chrome,
         theme,
-    ));
-    frame.render_widget(table, area);
+    );
 }

@@ -6,8 +6,7 @@ use super::App;
 use super::document::{is_money_input_character, update_document_field};
 use crate::repository::LoadedMonth;
 use crate::state::{
-    EditorState, FailureState, FieldId, InteractionState, PersistenceState, RetryTarget, Route,
-    SyncState,
+    EditorState, FieldId, InteractionState, PersistenceState, RetryTarget, Route, SyncState,
 };
 
 impl App {
@@ -85,10 +84,7 @@ impl App {
                 Ok(calculated) => {
                     // Only persist documents that still satisfy the domain
                     // rules after the field edit has been applied.
-                    state.calculated = calculated;
-                    state.message = Some("Autosaving changes".to_owned());
-                    state.persistence = PersistenceState::Dirty;
-                    state.sync = SyncState::SyncPending;
+                    Self::stage_document_persist(&mut state, calculated, "Autosaving changes");
                     state.edit_buffer = None;
                     state.interaction = InteractionState::SheetIdle;
                     self.persist_editor_state(state)
@@ -107,29 +103,18 @@ impl App {
         }
     }
 
-    pub(super) fn persist_editor_state(&mut self, mut state: EditorState) -> Result<()> {
-        state.persistence = PersistenceState::Autosaving;
-        state.sync = SyncState::Syncing;
-        let repository = self.repository()?;
-        match repository.save_month(&mut state.document) {
-            Ok(()) => {
-                state.calculated = calculate_month(self.config()?, &state.document)?;
-                state.persistence = PersistenceState::Clean;
-                state.sync = SyncState::Synced;
-                state.message = Some(self.autosave_message("Month autosaved")?);
+    pub(super) fn persist_editor_state(&mut self, state: EditorState) -> Result<()> {
+        match self.persist_route_state(
+            state,
+            "Month autosaved",
+            |state| format!("Could not save {}", state.document.month),
+            RetryTarget::EditorSave,
+        )? {
+            Some(state) => {
                 self.route = Route::MonthEditing(state);
                 Ok(())
             }
-            Err(error) => {
-                state.persistence = PersistenceState::SaveFailed;
-                state.sync = SyncState::SyncFailed;
-                self.route = Route::BlockingFailure(FailureState {
-                    title: format!("Could not save {}", state.document.month),
-                    message: error.to_string(),
-                    retry: RetryTarget::EditorSave(state),
-                });
-                Ok(())
-            }
+            None => Ok(()),
         }
     }
 

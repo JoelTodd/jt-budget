@@ -1,17 +1,25 @@
-use std::fs;
-use std::io::{self, IsTerminal, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::Duration;
+mod command;
+mod github;
+mod prompts;
 
-use anyhow::{Context, Result, anyhow, bail, ensure};
+use std::fs;
+use std::io::{self, IsTerminal};
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail, ensure};
 
 use crate::cli::SetupArgs;
 use crate::locator::RepoLocator;
 use crate::repository::Repository;
 
-const DEFAULT_GITHUB_HOST: &str = "github.com";
+use self::github::{
+    GithubRepoRef, authenticated_github_login, connect_github_remote_with_retry,
+    create_github_repository, default_github_repo_name, ensure_github_tooling_ready,
+    parse_github_repo_ref, verify_github_repository_accessible,
+};
+use self::prompts::{
+    prompt_for_github_repo, prompt_for_optional_remote, prompt_for_repo_path, prompt_for_setup_mode,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SetupTarget {
@@ -25,30 +33,6 @@ enum SetupMode {
     GithubConnect,
     LocalOnly,
     AdoptLocal,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct GithubRepoRef {
-    owner: String,
-    name: String,
-}
-
-impl GithubRepoRef {
-    fn name_with_owner(&self) -> String {
-        format!("{}/{}", self.owner, self.name)
-    }
-
-    fn https_remote(&self) -> String {
-        format!(
-            "https://{}/{}/{}.git",
-            DEFAULT_GITHUB_HOST, self.owner, self.name
-        )
-    }
-
-    fn matches_remote(&self, remote: &str) -> bool {
-        github_remote_name_with_owner(remote)
-            .is_some_and(|name_with_owner| name_with_owner == self.name_with_owner())
-    }
 }
 
 /// Runs the repository setup flow and returns the validated repo path.
@@ -258,6 +242,7 @@ fn validate_and_save_repository(locator: &RepoLocator, repo: &Path) -> Result<Pa
     })?;
     let canonical_repo = validated.root().to_path_buf();
     drop(validated);
+
     locator.save(&canonical_repo)?;
     Ok(canonical_repo)
 }
@@ -343,361 +328,6 @@ fn resolve_remote(
     prompt_for_optional_remote()
 }
 
-fn prompt_for_setup_mode() -> Result<SetupMode> {
-    println!("What would you like to do?");
-    println!("1. Create a new synced budget on GitHub");
-    println!("2. Connect this machine to an existing budget on GitHub");
-    println!("3. Keep this budget local only for now");
-    println!("4. Advanced: use an existing local budget folder");
-
-    loop {
-        let input = prompt_line("Setup mode [1]: ")?;
-        match input.trim() {
-            "" | "1" => return Ok(SetupMode::GithubCreate),
-            "2" => return Ok(SetupMode::GithubConnect),
-            "3" => return Ok(SetupMode::LocalOnly),
-            "4" => return Ok(SetupMode::AdoptLocal),
-            _ => println!("Please choose 1, 2, 3, or 4."),
-        }
-    }
-}
-
-fn prompt_for_repo_path() -> Result<PathBuf> {
-    let suggested = default_repo_path();
-    let input = prompt_line(&format!(
-        "Budget repository path [{}]: ",
-        suggested.display()
-    ))?;
-    if input.trim().is_empty() {
-        return Ok(suggested);
-    }
-    expand_home_path(input.trim())
-}
-
-fn prompt_for_optional_remote() -> Result<Option<String>> {
-    if !prompt_yes_no("Configure an origin remote now? [y/N]: ", false)? {
-        return Ok(None);
-    }
-
-    loop {
-        let input = prompt_line("Origin remote URL/path: ")?;
-        let trimmed = input.trim();
-        if !trimmed.is_empty() {
-            return Ok(Some(trimmed.to_owned()));
-        }
-        println!("Remote cannot be blank.");
-    }
-}
-
-fn prompt_for_github_repo(
-    label: &str,
-    default: &GithubRepoRef,
-    default_owner: &str,
-) -> Result<GithubRepoRef> {
-    loop {
-        let input = prompt_line(&format!("{label} [{}]: ", default.name_with_owner()))?;
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
-            return Ok(default.clone());
-        }
-
-        match parse_github_repo_ref(trimmed, default_owner) {
-            Ok(repo) => return Ok(repo),
-            Err(error) => println!("{error}"),
-        }
-    }
-}
-
-fn prompt_yes_no(prompt: &str, default: bool) -> Result<bool> {
-    loop {
-        let input = prompt_line(prompt)?;
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
-            return Ok(default);
-        }
-        match trimmed.to_ascii_lowercase().as_str() {
-            "y" | "yes" => return Ok(true),
-            "n" | "no" => return Ok(false),
-            _ => println!("Please answer y or n."),
-        }
-    }
-}
-
-fn prompt_line(prompt: &str) -> Result<String> {
-    print!("{prompt}");
-    io::stdout().flush().context("flushing setup prompt")?;
-
-    let mut input = String::new();
-    let read = io::stdin()
-        .read_line(&mut input)
-        .context("reading setup input")?;
-    if read == 0 {
-        return Err(anyhow!("setup was cancelled before input completed"));
-    }
-    Ok(input)
-}
-
-fn default_repo_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("budget")
-}
-
-fn default_github_repo_name(local_repo: &Path) -> String {
-    let raw = local_repo
-        .file_name()
-        .and_then(|value| value.to_str())
-        .filter(|value| !value.is_empty())
-        .unwrap_or("budget");
-
-    let mut name = String::new();
-    let mut last_dash = false;
-    for character in raw.chars() {
-        let mapped = if character.is_ascii_alphanumeric() {
-            character.to_ascii_lowercase()
-        } else if matches!(character, '-' | '_' | '.') {
-            character
-        } else {
-            '-'
-        };
-
-        if mapped == '-' {
-            if name.is_empty() || last_dash {
-                continue;
-            }
-            last_dash = true;
-        } else {
-            last_dash = false;
-        }
-
-        name.push(mapped);
-    }
-
-    let trimmed = name.trim_matches(|character| matches!(character, '-' | '_' | '.'));
-    if trimmed.is_empty() {
-        "budget".to_owned()
-    } else {
-        trimmed.to_owned()
-    }
-}
-
-fn expand_home_path(input: &str) -> Result<PathBuf> {
-    if input == "~" {
-        return dirs::home_dir().ok_or_else(|| anyhow!("could not resolve home directory"));
-    }
-
-    if let Some(rest) = input.strip_prefix("~/") {
-        let home = dirs::home_dir().ok_or_else(|| anyhow!("could not resolve home directory"))?;
-        return Ok(home.join(rest));
-    }
-
-    Ok(PathBuf::from(input))
-}
-
-fn parse_github_repo_ref(input: &str, default_owner: &str) -> Result<GithubRepoRef> {
-    let trimmed = input.trim();
-    ensure!(!trimmed.is_empty(), "GitHub repository cannot be blank");
-
-    if (trimmed.contains("://") || trimmed.starts_with("git@")) && !trimmed.contains("github.com") {
-        bail!("only github.com repositories are supported in the GitHub setup flow");
-    }
-
-    let trimmed = trimmed
-        .strip_prefix("https://github.com/")
-        .or_else(|| trimmed.strip_prefix("http://github.com/"))
-        .or_else(|| trimmed.strip_prefix("ssh://git@github.com/"))
-        .or_else(|| trimmed.strip_prefix("git@github.com:"))
-        .or_else(|| trimmed.strip_prefix("github.com/"))
-        .unwrap_or(trimmed)
-        .trim_end_matches('/')
-        .trim_end_matches(".git");
-
-    let parts: Vec<_> = trimmed.split('/').filter(|part| !part.is_empty()).collect();
-    let (owner, name) = match parts.as_slice() {
-        [name] => (default_owner, *name),
-        [owner, name] => (*owner, *name),
-        _ => bail!("GitHub repository must be in `OWNER/NAME` form"),
-    };
-
-    ensure!(
-        !owner.trim().is_empty(),
-        "GitHub repository owner cannot be blank"
-    );
-    ensure!(
-        !name.trim().is_empty(),
-        "GitHub repository name cannot be blank"
-    );
-
-    Ok(GithubRepoRef {
-        owner: owner.to_owned(),
-        name: name.to_owned(),
-    })
-}
-
-fn ensure_github_tooling_ready(interactive: bool) -> Result<()> {
-    ensure_command_available("git")?;
-    ensure_command_available("gh")?;
-
-    if !github_authenticated()? {
-        ensure!(
-            interactive,
-            "GitHub CLI is not authenticated; run `gh auth login` or use interactive setup"
-        );
-        println!("GitHub CLI is not authenticated. Starting `gh auth login`...");
-        run_command_inherit("gh", &["auth", "login"])?;
-    }
-
-    run_gh(&["auth", "setup-git", "--hostname", DEFAULT_GITHUB_HOST])
-        .context("configuring git to use GitHub CLI credentials")?;
-    Ok(())
-}
-
-fn authenticated_github_login() -> Result<String> {
-    let login = run_gh(&["api", "user", "--jq", ".login"]).context("reading GitHub login")?;
-    ensure!(!login.trim().is_empty(), "GitHub login cannot be blank");
-    Ok(login)
-}
-
-fn create_github_repository(repo: &GithubRepoRef) -> Result<()> {
-    let name_with_owner = repo.name_with_owner();
-    match run_gh(&[
-        "repo",
-        "create",
-        &name_with_owner,
-        "--private",
-        "--disable-issues",
-        "--disable-wiki",
-    ]) {
-        Ok(_) => Ok(()),
-        Err(error) if github_repo_already_exists(&error) => {
-            verify_github_repository_accessible(repo)
-                .with_context(|| format!("verifying existing GitHub repo `{name_with_owner}`"))?;
-            Ok(())
-        }
-        Err(error) => Err(error),
-    }
-}
-
-fn verify_github_repository_accessible(repo: &GithubRepoRef) -> Result<()> {
-    let name_with_owner = repo.name_with_owner();
-    run_gh(&["repo", "view", &name_with_owner, "--json", "nameWithOwner"]).map(|_| ())
-}
-
-fn connect_github_remote_with_retry(repo: &Path, github_repo: &GithubRepoRef) -> Result<()> {
-    const MAX_ATTEMPTS: usize = 5;
-
-    let remote = github_remote_for_connection(repo, github_repo)?;
-    let mut last_error = None;
-    for attempt in 1..=MAX_ATTEMPTS {
-        match Repository::connect_remote(repo, &remote) {
-            Ok(()) => return Ok(()),
-            Err(error) if attempt < MAX_ATTEMPTS && github_repo_not_ready(&error) => {
-                last_error = Some(error);
-                thread::sleep(Duration::from_secs(1));
-            }
-            Err(error) => return Err(error),
-        }
-    }
-
-    Err(last_error.expect("GitHub connection retry should preserve the last error"))
-}
-
-fn github_repo_not_ready(error: &anyhow::Error) -> bool {
-    error
-        .chain()
-        .any(|cause| cause.to_string().contains("Repository not found"))
-}
-
-fn github_repo_already_exists(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        let text = cause.to_string();
-        text.contains("Name already exists on this account") || text.contains("already exists")
-    })
-}
-
-fn github_remote_for_connection(repo: &Path, github_repo: &GithubRepoRef) -> Result<String> {
-    if let Some(existing_remote) = Repository::origin_remote_url(repo)? {
-        if github_repo.matches_remote(&existing_remote) {
-            return Ok(existing_remote);
-        }
-    }
-    Ok(github_repo.https_remote())
-}
-
-fn github_remote_name_with_owner(remote: &str) -> Option<String> {
-    let trimmed = remote.trim().trim_end_matches('/').trim_end_matches(".git");
-
-    let stripped = trimmed
-        .strip_prefix("https://github.com/")
-        .or_else(|| trimmed.strip_prefix("http://github.com/"))
-        .or_else(|| trimmed.strip_prefix("ssh://git@github.com/"))
-        .or_else(|| trimmed.strip_prefix("git@github.com:"))
-        .or_else(|| trimmed.strip_prefix("github.com/"))?;
-
-    let mut parts = stripped.split('/').filter(|part| !part.is_empty());
-    let owner = parts.next()?;
-    let name = parts.next()?;
-    if parts.next().is_some() {
-        return None;
-    }
-
-    Some(format!("{owner}/{name}"))
-}
-
-fn ensure_command_available(program: &str) -> Result<()> {
-    let status = Command::new(program)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .with_context(|| format!("checking whether `{program}` is installed"))?;
-    ensure!(status.success(), "`{program}` is not available");
-    Ok(())
-}
-
-fn github_authenticated() -> Result<bool> {
-    let status = Command::new("gh")
-        .args(["auth", "status", "--hostname", DEFAULT_GITHUB_HOST])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .context("checking GitHub CLI authentication state")?;
-    Ok(status.success())
-}
-
-fn run_gh(args: &[&str]) -> Result<String> {
-    run_command("gh", args)
-}
-
-fn run_command(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .with_context(|| format!("running `{program} {}`", args.join(" ")))?;
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned());
-    }
-
-    bail!(
-        "{} {} failed: {}",
-        program,
-        args.join(" "),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-}
-
-fn run_command_inherit(program: &str, args: &[&str]) -> Result<()> {
-    let status = Command::new(program)
-        .args(args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .with_context(|| format!("running `{program} {}`", args.join(" ")))?;
-    ensure!(status.success(), "`{program} {}` failed", args.join(" "));
-    Ok(())
-}
-
 fn classify_setup_target(repo: &Path) -> Result<SetupTarget> {
     if !repo.exists() {
         return Ok(SetupTarget::CreateNew);
@@ -736,10 +366,11 @@ mod tests {
     use anyhow::anyhow;
     use tempfile::tempdir;
 
-    use super::{
-        GithubRepoRef, SetupMode, default_github_repo_name, github_remote_name_with_owner,
-        github_repo_not_ready, parse_github_repo_ref, prepare_repository, resolve_setup_mode,
+    use super::github::{
+        GithubRepoRef, default_github_repo_name, github_remote_name_with_owner,
+        github_repo_not_ready, parse_github_repo_ref,
     };
+    use super::{SetupMode, prepare_repository, resolve_setup_mode};
     use crate::cli::SetupArgs;
     use crate::locator::RepoLocator;
     use crate::repository::Repository;

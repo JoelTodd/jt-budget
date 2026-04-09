@@ -46,23 +46,6 @@ pub(super) fn update_document_field(
     Ok(())
 }
 
-trait FieldNameExt {
-    fn labelless_name(&self) -> &'static str;
-}
-
-impl FieldNameExt for FieldId {
-    fn labelless_name(&self) -> &'static str {
-        match self {
-            FieldId::Account(_) => "account balance",
-            FieldId::PreviousMonthSpendingCorrection => "general spending over/under",
-            FieldId::InvestmentNotYetSent => "investment not yet sent",
-            FieldId::Earmark(_) => "next-month earmark",
-            FieldId::PotCarried(_) => "pot carried-over balance",
-            FieldId::PotChange(_) => "pot monthly change",
-        }
-    }
-}
-
 pub(super) fn is_month_id_character(character: char) -> bool {
     character.is_ascii_digit() || character == '-'
 }

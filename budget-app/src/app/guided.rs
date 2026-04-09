@@ -4,9 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::App;
 use super::document::{is_money_input_character, update_document_field};
-use crate::state::{
-    FailureState, FieldId, GuidedCreationState, PersistenceState, RetryTarget, Route, SyncState,
-};
+use crate::state::{FailureState, FieldId, GuidedCreationState, RetryTarget, Route};
 
 impl App {
     pub(super) fn handle_guided_key(
@@ -67,10 +65,7 @@ impl App {
                 Ok(calculated) => {
                     // Recalculate before persisting so validation failures stay
                     // in the guided flow instead of reaching the repository.
-                    state.calculated = calculated;
-                    state.message = Some("Autosaving draft".to_owned());
-                    state.persistence = PersistenceState::Dirty;
-                    state.sync = SyncState::SyncPending;
+                    Self::stage_document_persist(&mut state, calculated, "Autosaving draft");
                     self.persist_guided_state(state)
                 }
                 Err(error) => {
@@ -87,16 +82,14 @@ impl App {
         }
     }
 
-    pub(super) fn persist_guided_state(&mut self, mut state: GuidedCreationState) -> Result<()> {
-        state.persistence = PersistenceState::Autosaving;
-        state.sync = SyncState::Syncing;
-        let repository = self.repository()?;
-        match repository.save_month(&mut state.document) {
-            Ok(()) => {
-                state.calculated = calculate_month(self.config()?, &state.document)?;
-                state.persistence = PersistenceState::Clean;
-                state.sync = SyncState::Synced;
-                state.message = Some(self.autosave_message("Draft autosaved")?);
+    pub(super) fn persist_guided_state(&mut self, state: GuidedCreationState) -> Result<()> {
+        match self.persist_route_state(
+            state,
+            "Draft autosaved",
+            |state| format!("Could not save {}", state.document.month),
+            RetryTarget::GuidedSave,
+        )? {
+            Some(mut state) => {
                 if state.step_index + 1 >= state.steps.len() {
                     let editor =
                         self.editor_state_from_document(state.document, state.message.clone())?;
@@ -111,47 +104,24 @@ impl App {
                 }
                 Ok(())
             }
-            Err(error) => {
-                state.persistence = PersistenceState::SaveFailed;
-                state.sync = SyncState::SyncFailed;
-                self.route = Route::BlockingFailure(FailureState {
-                    title: format!("Could not save {}", state.document.month),
-                    message: error.to_string(),
-                    retry: RetryTarget::GuidedSave(state),
-                });
-                Ok(())
-            }
+            None => Ok(()),
         }
     }
 
-    pub(super) fn save_initial_guided_state(
-        &mut self,
-        mut state: GuidedCreationState,
-    ) -> Result<()> {
+    pub(super) fn save_initial_guided_state(&mut self, state: GuidedCreationState) -> Result<()> {
         // Persist the draft immediately so an interrupted guided flow can be
         // resumed from the navigation screen on the next launch.
-        state.persistence = PersistenceState::Autosaving;
-        state.sync = SyncState::Syncing;
-        let repository = self.repository()?;
-        match repository.save_month(&mut state.document) {
-            Ok(()) => {
-                state.calculated = calculate_month(self.config()?, &state.document)?;
-                state.persistence = PersistenceState::Clean;
-                state.sync = SyncState::Synced;
-                state.message = Some(self.autosave_message("Draft created")?);
+        match self.persist_route_state(
+            state,
+            "Draft created",
+            |state| format!("Could not create {}", state.document.month),
+            RetryTarget::CreateDraft,
+        )? {
+            Some(state) => {
                 self.route = Route::GuidedCreation(state);
                 Ok(())
             }
-            Err(error) => {
-                state.persistence = PersistenceState::SaveFailed;
-                state.sync = SyncState::SyncFailed;
-                self.route = Route::BlockingFailure(FailureState {
-                    title: format!("Could not create {}", state.document.month),
-                    message: error.to_string(),
-                    retry: RetryTarget::CreateDraft(state),
-                });
-                Ok(())
-            }
+            None => Ok(()),
         }
     }
 
@@ -176,8 +146,8 @@ impl App {
             step_index: 0,
             input: initial_input,
             message,
-            persistence: PersistenceState::Clean,
-            sync: SyncState::Synced,
+            persistence: crate::state::PersistenceState::Clean,
+            sync: crate::state::SyncState::Synced,
         })
     }
 }

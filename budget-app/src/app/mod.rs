@@ -8,6 +8,7 @@ mod editor;
 mod failure;
 mod guided;
 mod navigation;
+mod persistence;
 
 #[cfg(test)]
 mod tests;
