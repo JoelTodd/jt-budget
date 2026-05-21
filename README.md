@@ -1,41 +1,75 @@
 # jt-budget
 
-Rust workspace for a terminal-first monthly budgeting app.
+`jt-budget` is a terminal-first monthly budgeting app for a manual zero-based
+allocation workflow. It stores inspectable TOML budget files in a separate Git
+repository so budget data can stay private while this app remains shareable.
 
-## Crates
+It is not a transaction tracker or bank sync tool. The main workflow is to
+create a month, enter the balances and allocations that matter for that monthly
+budget session, and adjust the sheet until the difference is within tolerance.
 
-- `budget-core`: money parsing/formatting, month/config models, calculations, validation, TOML persistence.
-- `jt-budget`: CLI, Git-backed repository workflow, Ratatui UI, autosave, guided month creation, history/navigation.
+## Prerequisites
 
-## Run
+- Rust stable, version 1.85 or newer, with Cargo.
+- `git` for the budget-data repository and sync workflow.
+- GitHub CLI (`gh`) when using the guided GitHub setup path. Local-only setup
+  does not need it.
+- A terminal that supports an interactive TUI. The app is developed for Linux
+  terminals and is expected to work in WSL2 and other terminal environments
+  supported by Ratatui and Crossterm.
 
-First use:
+## Install
+
+Build and install the app from this checkout:
+
+```bash
+cargo install --path budget-app
+```
+
+For development without installing the binary, run app commands from this
+workspace with `cargo run -p jt-budget -- ...`.
+
+## First Run
+
+Start the setup flow:
 
 ```bash
 jt-budget setup
 ```
 
-GitHub-first setup expects `git` and GitHub CLI (`gh`). New budget setup also asks for account labels, savings pot labels and monthly changes, and next-month earmark labels and defaults. Local-only setup and advanced local adoption still exist inside the setup flow.
+The default setup path can create a new private GitHub-backed budget repository
+or connect this machine to an existing one. The same flow also supports
+local-only setup and advanced adoption of an existing local repository.
 
-Normal launch:
+Normal launches reopen the configured budget repository:
 
 ```bash
 jt-budget
 ```
 
-One-shot or scripted launch:
+To open a budget repository for one launch without changing the saved default:
 
 ```bash
 jt-budget --repo /path/to/budget-repo
 ```
 
-From this workspace checkout, `.cargo/config.toml` adds:
+When running from this checkout, the Cargo alias is equivalent:
 
 ```bash
 cargo budget
 ```
 
-`setup` now defaults to a GitHub-first flow: it can create a new private GitHub-backed budget repo, connect this machine to an existing GitHub budget repo, or fall back to local-only or advanced local adoption. During GitHub setup it uses `gh` for authentication and repo creation, configures Git credentials for later plain `git pull` and `git push`, validates the resulting repo through the normal repository gate, and only then saves it as the default launch target. If no default has been configured yet, plain `jt-budget` starts that setup flow interactively. `init` and `run --repo ...` still exist as compatibility commands. After startup, sync remains strict and uses `git pull --ff-only` plus blocking push failures. Each confirmed guided step or edited field autosaves the month file, commits it, and pushes when a remote is configured. Month files live in `months/YYYY-MM.toml`; cached derived values are written for inspection but recomputed on load.
+## Budget Data
+
+The app source repository and the budget-data repository are intentionally
+separate. Do not place real budget files in this checkout.
+
+A budget-data repository contains the user-editable config and month files,
+including `config.toml` and `months/YYYY-MM.toml`. Confirmed guided steps and
+edited fields autosave month data. When a remote is configured, saves use the
+Git-backed sync path and sync failures block instead of being silently ignored.
+Derived totals written to month files are only cached inspection data; the app
+recomputes them from editable state when loading.
 
 The bundled Base24 palette lives in [`budget-app/theme.toml`](budget-app/theme.toml).
 
@@ -51,6 +85,5 @@ The bundled Base24 palette lives in [`budget-app/theme.toml`](budget-app/theme.t
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-cargo doc --no-deps
 cargo build --release
 ```

@@ -35,12 +35,12 @@ Goal: make the repo legally usable and clearly attributable.
 
 Goal: make the project understandable to somebody who is not already inside the workflow.
 
-- [ ] Rewrite `README.md` for public readers rather than local development shorthand.
-- [ ] Add explicit install and run instructions.
-- [ ] Document system prerequisites such as Rust, `git`, and optional `gh`.
-- [ ] Explain the split between this app repo and the user’s separate private budget-data repo.
-- [ ] State the supported or expected environments clearly instead of relying on the WSL handoff notes.
-- [ ] Decide whether `docs/app-env.md` should stay public, be rewritten as generic setup guidance, or be removed.
+- [x] Rewrite `README.md` for public readers rather than local development shorthand.
+- [x] Add explicit install and run instructions.
+- [x] Document system prerequisites such as Rust, `git`, and optional `gh`.
+- [x] Explain the split between this app repo and the user’s separate private budget-data repo.
+- [x] State the supported or expected environments clearly instead of relying on the WSL handoff notes.
+- [x] Decide whether `docs/app-env.md` should stay public, be rewritten as generic setup guidance, or be removed.
 
 ## 4. Automation And Repository Settings
 

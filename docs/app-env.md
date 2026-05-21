@@ -1,208 +1,70 @@
-# Developer Handoff: WSL2 Ubuntu Budget App Dev Environment
+# App Environment
 
 ## Purpose
 
-This document records what is installed and available on the WSL2 Ubuntu instance for development of the Rust TUI budgeting app.
+This document gives generic environment guidance for building and running
+`jt-budget`. It is not a handoff record for one development machine.
 
-The aim of this setup is to provide a clean baseline for local Rust development with Git-based sync support.
+## Supported And Expected Environments
 
----
+`jt-budget` is developed for interactive Linux terminals. WSL2 Ubuntu is a
+supported development path when it provides the tools below. The terminal UI is
+built with Ratatui and Crossterm, so other terminal environments supported by
+that stack may work, but should be verified before relying on them.
 
-## Installed Environment
+The app expects:
 
-### System packages
+- a terminal session with interactive stdin and stdout
+- a filesystem location for a separate budget-data repository
+- Git access for repository-backed persistence and sync
 
-Installed via `apt`:
+## Required Tools
 
-- `build-essential`
-- `pkg-config`
-- `git`
-- `openssh-client`
-- `curl`
-- `ca-certificates`
+Install:
 
-### Rust toolchain
-
-Installed via `rustup`:
-
-- stable Rust toolchain
-- `cargo`
-- `rustc`
-
-### Rust components
-
-Added via `rustup component add`:
-
-- `rustfmt`
-- `clippy`
-- `rust-analyzer`
-
----
-
-## Installed Tools and Their Role
-
-## 1. Native Build Toolchain
-
-### Installed
-
-- `build-essential`
-
-### What it provides
-
-The standard Ubuntu native compilation toolchain, including:
-
-- `gcc`
-- `g++`
-- `make`
-- standard development headers and related build support
-
-### Why it is available
-
-This supports Rust builds on Linux where crates may rely on a working native toolchain during compilation.
-
----
-
-## 2. Build Configuration Support
-
-### Installed
-
-- `pkg-config`
-
-### What it provides
-
-The standard Linux utility for discovering compiler and linker flags for native libraries.
-
-### Why it is available
-
-This supports build scripts that may need to detect system libraries during compilation.
-
----
-
-## 3. Git Support
-
-### Installed
-
+- stable Rust 1.85 or newer through `rustup` or an equivalent toolchain source
+- Cargo
 - `git`
 
-### What it provides
+For development, also install the Rust components used by the project checks:
 
-The Git command-line client is available in the environment.
+```bash
+rustup component add rustfmt clippy
+```
 
-### Why it is available
+`rust-analyzer` is useful for editors, but is not required to build or run the
+app.
 
-This supports local repository operations and the planned Git-based sync workflow.
+## Optional Tools
 
----
+- GitHub CLI (`gh`) is required only for the guided GitHub setup path that
+  creates or connects a private GitHub-backed budget repository.
+- SSH client tooling is needed when the chosen Git remote uses SSH.
+- Linux native build tools such as a C compiler and `pkg-config` may be needed
+  if the local Rust toolchain or dependency build environment requires them.
 
-## 4. SSH Support
+On Ubuntu or WSL2 Ubuntu, a practical baseline is:
 
-### Installed
+```bash
+sudo apt install build-essential pkg-config git openssh-client curl ca-certificates
+```
 
-- `openssh-client`
+Install Rust separately, then verify `cargo`, `rustc`, and `git` are available.
 
-### What it provides
+## Project Commands
 
-Standard SSH client tooling, including `ssh`.
+Run app commands from the workspace with:
 
-### Why it is available
+```bash
+cargo run -p jt-budget -- setup
+cargo run -p jt-budget -- --repo /path/to/budget-repo
+```
 
-This supports authentication and access to Git remotes over SSH.
+Run the project checks with:
 
----
-
-## 5. HTTPS Fetch Support
-
-### Installed
-
-- `curl`
-- `ca-certificates`
-
-### What they provide
-
-Secure HTTPS download capability and certificate trust validation.
-
-### Why they are available
-
-These support bootstrap and other secure remote fetch operations during development.
-
----
-
-## 6. Rust Toolchain
-
-### Installed
-
-Via `rustup`:
-
-- stable Rust toolchain
-- `cargo`
-- `rustc`
-
-### What it provides
-
-The standard Rust development environment for:
-
-- compiling code
-- managing dependencies
-- building binaries
-- running tests
-- running project commands
-
----
-
-## 7. Rust Development Components
-
-### Installed
-
-Via `rustup component add`:
-
-- `rustfmt`
-- `clippy`
-- `rust-analyzer`
-
-### What each one is for
-
-#### `rustfmt`
-
-The standard Rust code formatter.
-
-#### `clippy`
-
-The standard Rust linter.
-
-#### `rust-analyzer`
-
-The standard Rust language server backend used by editors for completion, diagnostics, navigation, and refactoring support.
-
----
-
-## Available Commands
-
-The following commands should be available in the shell:
-
-- `rustc`
-- `cargo`
-- `rustfmt`
-- `cargo fmt`
-- `cargo clippy`
-- `git`
-- `ssh`
-- `curl`
-- `pkg-config`
-- `gcc`
-- `g++`
-- `make`
-
----
-
-## Environment Status
-
-The instance is ready for:
-
-- creating Rust projects with Cargo
-- building and running the app locally
-- adding Rust crate dependencies
-- formatting code
-- linting code
-- running tests
-- working with Git repositories
-- authenticating to remotes over SSH
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo build --release
+```
