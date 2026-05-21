@@ -75,11 +75,16 @@ Goal: make it clear how outside people should interact with the project.
 
 Goal: confirm the repo is ready to be opened without avoidable follow-up churn.
 
-- [ ] Re-read the README as if you were a new user.
-- [ ] Re-check the top-level file list for anything that looks local, temporary, or private.
-- [ ] Confirm `.gitignore` is still appropriate for public collaboration.
-- [ ] Run the local verification commands again before changing visibility.
-- [ ] Decide whether to make the repo public immediately or publish after the CI and doc changes are merged.
+- [x] Re-read the README as if you were a new user.
+- [x] Re-check the top-level file list for anything that looks local, temporary,
+  or private.
+- [x] Confirm `.gitignore` is still appropriate for public collaboration.
+  Editor swap files are ignored after the final review found a local swap file
+  under `docs/`.
+- [x] Run the local verification commands again before changing visibility.
+  Completed on 21 May 2026.
+- [x] Decide whether to make the repo public immediately or publish after the CI
+  and doc changes are merged. Publish after this final pass is merged.
 
 ## Suggested Review Flow
 

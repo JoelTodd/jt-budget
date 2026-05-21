@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,7 +32,7 @@ impl MonthStore {
             }
             months.push(self.load_month(&path)?);
         }
-        months.sort_by(|left, right| right.document.month.cmp(&left.document.month));
+        months.sort_by_key(|month| Reverse(month.document.month));
         Ok(months)
     }
 
