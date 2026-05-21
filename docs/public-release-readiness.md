@@ -25,11 +25,11 @@ Goal: make sure the repository and its history do not expose private information
 
 Goal: make the repo legally usable and clearly attributable.
 
-- [ ] Choose and add a `LICENSE` file.
-- [ ] Decide whether the current repo name and crate names are the names you want to keep in public.
-- [ ] Add package metadata to the Cargo manifests if wanted for discoverability:
+- [x] Choose and add a `LICENSE` file.
+- [x] Decide whether the current repo name and crate names are the names you want to keep in public.
+- [x] Add package metadata to the Cargo manifests if wanted for discoverability:
   repository URL, licence field, description, readme, keywords, categories.
-- [ ] Decide whether to keep release tags and versioning exactly as-is or tidy them before publication.
+- [x] Decide whether to keep release tags and versioning exactly as-is or tidy them before publication.
 
 ## 3. Public-Facing Docs
 

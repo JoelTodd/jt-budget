@@ -2,7 +2,13 @@
 name = "budget-core"
 version.workspace = true
 edition.workspace = true
+description = "Budget models, calculations, validation, and TOML persistence for jt-budget"
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
 rust-version.workspace = true
+keywords = ["budget", "finance", "money", "toml"]
+categories = ["finance"]
 
 [dependencies]
 serde.workspace = true

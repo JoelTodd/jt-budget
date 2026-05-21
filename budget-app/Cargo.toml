@@ -2,7 +2,13 @@
 name = "jt-budget"
 version.workspace = true
 edition.workspace = true
+description = "Terminal-first monthly budgeting app with Git-backed budget files"
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
 rust-version.workspace = true
+keywords = ["budget", "finance", "tui", "terminal"]
+categories = ["command-line-utilities", "finance"]
 
 [dependencies]
 anyhow.workspace = true
