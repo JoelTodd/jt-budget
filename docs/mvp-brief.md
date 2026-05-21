@@ -27,17 +27,17 @@ The MVP must support individual accounts, not vague grouped totals.
 
 Initial accounts:
 
-- Current
-- Cash ISA
-- Amex credit
-- Nationwide credit
+- Current account
+- Savings account
+- Credit card A
+- Credit card B
 
 Balances are entered as positive amounts by the user. The app applies the sign rules internally.
 
 Expected sign behaviour:
 
-- Asset accounts like Current and Cash ISA are positive
-- Liability accounts like Amex credit and Nationwide credit are negative
+- Asset accounts like Current account and Savings account are positive
+- Liability accounts like Credit card A and Credit card B are negative
 
 The app should show a subtle baked-in sign cue beside each field so the user never has to type negative numbers.
 
@@ -45,7 +45,7 @@ The app should show a subtle baked-in sign cue beside each field so the user nev
 
 The app should derive a top-line net position from accounts:
 
-`net position = current + cash ISA - amex credit - nationwide credit`
+`net position = current account + savings account - credit card A - credit card B`
 
 This is the user’s headline “how much money do I actually have” number.
 
@@ -69,11 +69,11 @@ The MVP needs two timing adjustment concepts:
 
 ### 1. Investment Not Yet Sent
 
-The user contributes **£245/month** to an investment account, but that investment account is normally **outside** the zero-sum budget model.
+The user contributes **£180/month** to an investment account, but that investment account is normally **outside** the zero-sum budget model.
 
 That means the investment contribution is normally off-book.
 
-The only time it appears in the budget is when the £245 has not yet actually left the current account. In that case, a timing adjustment is used so the budget reflects reality.
+The only time it appears in the budget is when the £180 has not yet actually left the current account. In that case, a timing adjustment is used so the budget reflects reality.
 
 ### 2. General Spending Over/Under
 
@@ -96,7 +96,7 @@ These amounts should prefill from config every month and remain editable.
 
 ### General Spending Context
 
-The user currently earmarks **£375** for general spending and tracks the day-by-day burn externally using a calendar trick. That daily tracking stays outside the app in V1.
+The user currently earmarks **£320** for general spending and tracks the day-by-day burn externally using a calendar trick. That daily tracking stays outside the app in V1.
 
 The app only needs to treat general spending as one earmarked amount.
 
@@ -108,15 +108,15 @@ The app needs named savings pots with carry-forward balances and monthly contrib
 
 Initial pots:
 
-- Fun expensive stuff
-- Long-term savings
-- Label
+- Travel fund
+- Home upkeep
+- Emergency buffer
 
 Initial fixed monthly contributions:
 
-- Fun expensive stuff: **£155**
-- Long-term savings: **£60**
-- Label: **£25**
+- Travel fund: **£90**
+- Home upkeep: **£55**
+- Emergency buffer: **£35**
 
 ### How Pots Should Work
 
@@ -169,14 +169,14 @@ The month should be named by the payday month, for example:
 - March 2026
 - April 2026
 
-The fact that payday is the 11th does not need operational meaning in the app. It does not need reminders, overdue logic, or date-based warnings.
+The specific payday date does not need operational meaning in the app. It does not need reminders, overdue logic, or date-based warnings.
 
 ### Initial Flow for a New Month
 
 When creating a month, the app should start with a guided flow in this order:
 
 1. Current account balance
-2. Cash ISA balance
+2. Savings account balance
 3. Credit card balances
 4. General spending over/under
 5. Investment timing adjustment

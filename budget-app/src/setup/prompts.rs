@@ -2,6 +2,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
+use budget_core::{AppConfig, format_minor_units, parse_money_input};
 
 use super::SetupMode;
 use super::github::{GithubRepoRef, parse_github_repo_ref};
@@ -66,6 +67,65 @@ pub(super) fn prompt_for_github_repo(
 
         match parse_github_repo_ref(trimmed, default_owner) {
             Ok(repo) => return Ok(repo),
+            Err(error) => println!("{error}"),
+        }
+    }
+}
+
+pub(super) fn prompt_for_new_budget_config(defaults: &AppConfig) -> Result<AppConfig> {
+    let mut config = defaults.clone();
+
+    println!("Configure the labels and monthly defaults for this budget.");
+    println!("Press Enter to keep the value shown in brackets.");
+
+    for account in &mut config.accounts {
+        account.label = prompt_for_label("Account label", &account.label)?;
+    }
+
+    for pot in &mut config.savings_pots {
+        pot.label = prompt_for_label("Savings pot label", &pot.label)?;
+        pot.default_monthly_change_minor = prompt_for_money_default(
+            "Default monthly pot change",
+            pot.default_monthly_change_minor,
+            false,
+        )?;
+    }
+
+    for earmark in &mut config.next_month_earmarks {
+        earmark.label = prompt_for_label("Next-month earmark label", &earmark.label)?;
+        earmark.default_amount_minor = prompt_for_money_default(
+            "Default earmark amount",
+            earmark.default_amount_minor,
+            false,
+        )?;
+    }
+
+    config.validate().context("validating setup config")?;
+    Ok(config)
+}
+
+fn prompt_for_label(label: &str, default: &str) -> Result<String> {
+    let input = prompt_line(&format!("{label} [{default}]: "))?;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(default.to_owned());
+    }
+    Ok(trimmed.to_owned())
+}
+
+fn prompt_for_money_default(label: &str, default_minor: i64, allow_negative: bool) -> Result<i64> {
+    loop {
+        let input = prompt_line(&format!(
+            "{label} [{}]: ",
+            format_minor_units(default_minor)
+        ))?;
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            return Ok(default_minor);
+        }
+
+        match parse_money_input(trimmed, allow_negative) {
+            Ok(amount) => return Ok(amount.minor()),
             Err(error) => println!("{error}"),
         }
     }

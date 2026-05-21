@@ -154,29 +154,29 @@ mod tests {
     fn money_input_uses_currency_as_non_editable_prefix() {
         let config = AppConfig::default_mvp();
         let document = MonthDocument::new_draft(MonthId::parse("2026-03").unwrap(), &config, None);
-        let field = FieldId::Account("current".to_owned());
+        let field = FieldId::Account("current_account".to_owned());
         let mut input = MoneyInput::from_field(&field, &document);
 
-        for character in ['2', '4', '5'] {
+        for character in ['1', '8', '0'] {
             input.push(character);
         }
-        assert_eq!(input.display_text(), "£245.00");
+        assert_eq!(input.display_text(), "£180.00");
 
         input.push('£');
-        assert_eq!(input.display_text(), "£245.00");
+        assert_eq!(input.display_text(), "£180.00");
 
         input.backspace();
-        assert_eq!(input.display_text(), "£24.00");
+        assert_eq!(input.display_text(), "£18.00");
         input.push('.');
         input.push('5');
-        assert_eq!(input.display_text(), "£24.50");
-        assert_eq!(input.commit_value().unwrap().minor(), 2_450);
+        assert_eq!(input.display_text(), "£18.50");
+        assert_eq!(input.commit_value().unwrap().minor(), 1_850);
     }
 
     #[test]
     fn field_sections_follow_rendered_groups() {
         assert_eq!(
-            FieldId::PotChange("fun_expensive_stuff".to_owned()).section(),
+            FieldId::PotChange("travel_fund".to_owned()).section(),
             SectionId::SavingsPots
         );
     }

@@ -397,7 +397,7 @@ Using integer pence gives exact arithmetic and avoids floating point errors.
 
 Examples:
 
-- `£245.00` becomes `24500`
+- `£180.00` becomes `18000`
 - `£1.00` becomes `100`
 - validation tolerance becomes `-100..=100`
 

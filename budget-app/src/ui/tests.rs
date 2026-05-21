@@ -69,7 +69,7 @@ fn navigation_render_uses_compact_summary_and_short_updated_text() {
 
     assert!(rendered.contains("2026-03-31 | 14:30"));
     assert!(!rendered.contains("14:30:06"));
-    assert!(!rendered.contains("Current:"));
+    assert!(!rendered.contains("Current account:"));
     assert!(rendered.contains("Accounts"));
     assert!(rendered.contains("Timing Adjustments"));
     assert!(rendered.contains("Next Month Earmarks"));
@@ -103,7 +103,7 @@ fn navigation_render_uses_semantic_status_and_difference_colours() {
             .expect("draft state sets a foreground colour")
     );
 
-    let (diff_x, diff_y) = find_text(&buffer, "£801.00").unwrap();
+    let (diff_x, diff_y) = find_text(&buffer, "£1340.00").unwrap();
     let diff = &buffer[(diff_x, diff_y)];
     assert_eq!(
         diff.fg,
@@ -162,9 +162,9 @@ fn editor_render_shows_idle_focus_marker_and_active_section_emphasis() {
     let buffer = draw_route(&editor_route(&config), Some(&config), 105, 48);
     let rendered = buffer_to_string(buffer.clone());
 
-    assert!(rendered.contains("› Fun expensive stuff"));
+    assert!(rendered.contains("› Travel fund"));
 
-    let (marker_x, marker_y) = find_text(&buffer, "› Fun expensive stuff").unwrap();
+    let (marker_x, marker_y) = find_text(&buffer, "› Travel fund").unwrap();
     let marker = &buffer[(marker_x, marker_y)];
     assert_eq!(
         marker.fg,
@@ -206,10 +206,10 @@ fn editor_render_distinguishes_editing_from_idle_focus() {
     );
     let rendered = buffer_to_string(buffer.clone());
 
-    assert!(rendered.contains("✎ Fun expensive stuff"));
-    assert!(rendered.contains("£820.00_"));
+    assert!(rendered.contains("✎ Travel fund"));
+    assert!(rendered.contains("£800.00_"));
 
-    let (value_x, value_y) = find_text(&buffer, "£820.00_").unwrap();
+    let (value_x, value_y) = find_text(&buffer, "£800.00_").unwrap();
     let value = &buffer[(value_x, value_y)];
     assert_eq!(
         value.fg,
@@ -301,7 +301,7 @@ fn editor_render_can_use_a_project_theme_override() {
     let title = &buffer[(title_x, title_y)];
     assert_eq!(title.fg, Color::Rgb(0x11, 0xee, 0x44));
 
-    let (input_x, input_y) = find_text(&buffer, "£820.00").unwrap();
+    let (input_x, input_y) = find_text(&buffer, "£800.00").unwrap();
     let input = &buffer[(input_x, input_y)];
     assert_eq!(input.bg, Color::Rgb(0x10, 0x11, 0x12));
 }
@@ -320,7 +320,7 @@ fn editor_render_separates_liability_cues_from_validation_failure() {
     let theme = UiTheme::project_default();
     let buffer = draw_route(&editor_route(&config), Some(&config), 105, 48);
 
-    let (minus_x, minus_y) = find_text(&buffer, "-£204.00").unwrap();
+    let (minus_x, minus_y) = find_text(&buffer, "-£200.00").unwrap();
     let liability = &buffer[(minus_x, minus_y)];
     assert_eq!(
         liability.fg,
@@ -405,12 +405,12 @@ fn guided_render_omits_redundant_draft_status_copy_and_uses_compact_preview() {
     assert!(!rendered.contains("Draft created and synced"));
     assert!(!rendered.contains("Draft autosaved and synced"));
     assert!(!rendered.contains("Subscriptions:"));
-    assert!(!rendered.contains("Cash ISA:"));
+    assert!(!rendered.contains("Savings account:"));
     assert!(!rendered.contains("Type digits or decimals, then press Enter to autosave."));
     assert!(!rendered.contains("Validation: outside tolerance"));
     assert!(rendered.contains("Amount"));
     assert!(rendered.contains("Next: General spending"));
-    assert!(rendered.contains("Earmarks £505.00  |  Diff -£745.00"));
+    assert!(rendered.contains("Earmarks £440.00  |  Diff -£620.00"));
 }
 
 #[test]

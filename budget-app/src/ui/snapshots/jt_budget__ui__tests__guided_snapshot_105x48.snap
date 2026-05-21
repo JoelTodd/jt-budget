@@ -1,7 +1,6 @@
 ---
-source: budget-app/src/ui.rs
-assertion_line: 2016
-expression: "buffer_to_string(draw_route(&route, Some(&config), 105, 48))"
+source: budget-app/src/ui/tests.rs
+expression: "buffer_to_string(draw_route(route, Some(config), width, height))"
 ---
 ┌Guided Creation────────────────────────────────────────────────────────────────────────────────────────┐
 │May 2026  |  Step 13/14                                                                                │
@@ -9,11 +8,11 @@ expression: "buffer_to_string(draw_route(&route, Some(&config), 105, 48))"
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌Current Step──────────────────────────────┐┌Live Preview───────────────────────────────────────────────┐
 │Subscriptions                             ││Accounts £0.00 | Timing Adjustments £0.00                  │
-│                                          ││Next Month Earmarks £505.00 | Savings Pots £240.00         │
-│Type digits or decimals, then press Enter ││Total allocated £745.00 | Overall difference -£745.00      │
+│                                          ││Next Month Earmarks £440.00 | Savings Pots £180.00         │
+│Type digits or decimals, then press Enter ││Total allocated £620.00 | Overall difference -£620.00      │
 │to autosave.                              ││Status invalid                                             │
 │                                          ││                                                           │
-│Input: £130.00                            ││                                                           │
+│Input: £120.00                            ││                                                           │
 │                                          ││                                                           │
 │Next steps:                               ││                                                           │
 │• General spending                        ││                                                           │
@@ -47,7 +46,7 @@ expression: "buffer_to_string(draw_route(&route, Some(&config), 105, 48))"
 │                                          ││                                                           │
 └──────────────────────────────────────────┘└───────────────────────────────────────────────────────────┘
 ┌Status─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Validation: outside tolerance  |  Difference: -£745.00                                                 │
+│Validation: outside tolerance  |  Difference: -£620.00                                                 │
 │Persistence: clean  |  Sync: synced                                                                    │
 │The draft is saved as you confirm each guided step.                                                    │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘

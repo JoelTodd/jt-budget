@@ -252,20 +252,20 @@ mod tests {
         assert_eq!(
             fields,
             vec![
-                FieldId::Account("current".to_owned()),
-                FieldId::Account("cash_isa".to_owned()),
-                FieldId::Account("amex_credit".to_owned()),
-                FieldId::Account("nationwide_credit".to_owned()),
+                FieldId::Account("current_account".to_owned()),
+                FieldId::Account("savings_account".to_owned()),
+                FieldId::Account("credit_card_a".to_owned()),
+                FieldId::Account("credit_card_b".to_owned()),
                 FieldId::PreviousMonthSpendingCorrection,
                 FieldId::InvestmentNotYetSent,
                 FieldId::Earmark("subscriptions".to_owned()),
                 FieldId::Earmark("general_spending".to_owned()),
-                FieldId::PotCarried("fun_expensive_stuff".to_owned()),
-                FieldId::PotChange("fun_expensive_stuff".to_owned()),
-                FieldId::PotCarried("long_term_savings".to_owned()),
-                FieldId::PotChange("long_term_savings".to_owned()),
-                FieldId::PotCarried("label".to_owned()),
-                FieldId::PotChange("label".to_owned()),
+                FieldId::PotCarried("travel_fund".to_owned()),
+                FieldId::PotChange("travel_fund".to_owned()),
+                FieldId::PotCarried("home_upkeep".to_owned()),
+                FieldId::PotChange("home_upkeep".to_owned()),
+                FieldId::PotCarried("emergency_buffer".to_owned()),
+                FieldId::PotChange("emergency_buffer".to_owned()),
             ]
         );
         let unique = fields.iter().collect::<BTreeSet<_>>();

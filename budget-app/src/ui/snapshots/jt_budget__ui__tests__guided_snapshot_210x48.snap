@@ -1,18 +1,17 @@
 ---
-source: budget-app/src/ui.rs
-assertion_line: 2023
-expression: "buffer_to_string(draw_route(&route, Some(&config), 210, 48))"
+source: budget-app/src/ui/tests.rs
+expression: "buffer_to_string(draw_route(route, Some(config), width, height))"
 ---
 ┌Guided Creation─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │May 2026  |  Step 13/14                                                                                                                                                                                         │
 │Type amount | Backspace delete | Enter save step | Esc months | q quit                                                                                                                                          │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 Current Step────────────────────────────────────────────────────────────────  Live Preview────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Subscriptions                                                                 Accounts £0.00 | Timing Adjustments £0.00 | Next Month Earmarks £505.00 | Savings Pots £240.00 | Total allocated £745.00
-                                                                              Overall difference -£745.00 | Status invalid
+Subscriptions                                                                 Accounts £0.00 | Timing Adjustments £0.00 | Next Month Earmarks £440.00 | Savings Pots £180.00 | Total allocated £620.00
+                                                                              Overall difference -£620.00 | Status invalid
 Type digits or decimals, then press Enter to autosave.
 
-Input: £130.00
+Input: £120.00
 
 Next steps:
 • General spending
@@ -48,5 +47,5 @@ Next steps:
 
 
 Status────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Validation: outside tolerance  |  Difference: -£745.00
+Validation: outside tolerance  |  Difference: -£620.00
 Persistence: clean  |  Sync: synced

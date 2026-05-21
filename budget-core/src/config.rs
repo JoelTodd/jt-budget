@@ -50,19 +50,19 @@ impl AppConfig {
         Self {
             validation_tolerance_minor: 100,
             accounts: vec![
-                AccountConfig::asset("current", "Current"),
-                AccountConfig::asset("cash_isa", "Cash ISA"),
-                AccountConfig::liability("amex_credit", "Amex credit"),
-                AccountConfig::liability("nationwide_credit", "Nationwide credit"),
+                AccountConfig::asset("current_account", "Current account"),
+                AccountConfig::asset("savings_account", "Savings account"),
+                AccountConfig::liability("credit_card_a", "Credit card A"),
+                AccountConfig::liability("credit_card_b", "Credit card B"),
             ],
             savings_pots: vec![
-                SavingsPotConfig::new("fun_expensive_stuff", "Fun expensive stuff", 15_500),
-                SavingsPotConfig::new("long_term_savings", "Long-term savings", 6_000),
-                SavingsPotConfig::new("label", "Label", 2_500),
+                SavingsPotConfig::new("travel_fund", "Travel fund", 9_000),
+                SavingsPotConfig::new("home_upkeep", "Home upkeep", 5_500),
+                SavingsPotConfig::new("emergency_buffer", "Emergency buffer", 3_500),
             ],
             next_month_earmarks: vec![
-                EarmarkConfig::new("subscriptions", "Subscriptions", 13_000),
-                EarmarkConfig::new("general_spending", "General spending", 37_500),
+                EarmarkConfig::new("subscriptions", "Subscriptions", 12_000),
+                EarmarkConfig::new("general_spending", "General spending", 32_000),
             ],
         }
     }
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn liability_accounts_apply_negative_signs() {
         let config = AppConfig::default_mvp();
-        let liability = config.account("amex_credit").unwrap();
+        let liability = config.account("credit_card_a").unwrap();
         assert_eq!(liability.kind, AccountKind::Liability);
         assert_eq!(liability.apply_sign(12_345).minor(), -12_345);
     }
@@ -210,7 +210,7 @@ mod tests {
                 .earmark("subscriptions")
                 .unwrap()
                 .default_amount_minor,
-            13_000
+            12_000
         );
     }
 

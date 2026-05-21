@@ -1,6 +1,6 @@
 ---
-source: budget-app/src/ui.rs
-expression: "buffer_to_string(draw_route(&route, Some(&config), 80, 24))"
+source: budget-app/src/ui/tests.rs
+expression: "buffer_to_string(draw_route(route, Some(config), width, height))"
 ---
 ┌Navigation────────────────────────────────────────────────────────────────────┐
 │Repo: /tmp/budget                                                             │
@@ -8,7 +8,7 @@ expression: "buffer_to_string(draw_route(&route, Some(&config), 80, 24))"
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                   State      Diff           Updated                          │
-│August 2026        draft             £801.00 2026-03-31 | 14:30               │
+│August 2026        draft            £1340.00 2026-03-31 | 14:30               │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -16,9 +16,9 @@ expression: "buffer_to_string(draw_route(&route, Some(&config), 80, 24))"
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌Summary───────────────────────────────────────────────────────────────────────┐
-│Accounts £2591.00 | Timing Adjustments £0.00                                  │
-│Next Month Earmarks £275.00 | Savings Pots £1515.00                           │
-│Total allocated £1790.00 | Overall difference £801.00 | Status invalid        │
+│Accounts £2600.00 | Timing Adjustments £0.00                                  │
+│Next Month Earmarks £210.00 | Savings Pots £1050.00                           │
+│Total allocated £1260.00 | Overall difference £1340.00 | Status invalid       │
 │                                                                              │
 │                                                                              │
 │                                                                              │

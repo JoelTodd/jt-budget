@@ -59,6 +59,21 @@ impl Repository {
     /// Returns an error if the target directory is not empty, required files
     /// cannot be written, or git initialisation fails.
     pub fn init(root: &Path, remote: Option<&str>) -> Result<()> {
+        Self::init_with_config(root, remote, &AppConfig::default_mvp())
+    }
+
+    /// Creates a new budget repository with an explicit initial config.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config is invalid, the target directory is not
+    /// empty, required files cannot be written, or git initialisation fails.
+    pub(crate) fn init_with_config(
+        root: &Path,
+        remote: Option<&str>,
+        config: &AppConfig,
+    ) -> Result<()> {
+        config.validate().context("validating initial config")?;
         ensure_directory_missing_or_empty(root)?;
 
         fs::create_dir_all(root.join("months"))
@@ -66,7 +81,6 @@ impl Repository {
         fs::create_dir_all(root.join("meta"))
             .with_context(|| format!("creating meta directory in `{}`", root.display()))?;
 
-        let config = AppConfig::default_mvp();
         fs::write(root.join("config.toml"), toml::to_string_pretty(&config)?)
             .with_context(|| format!("writing config.toml in `{}`", root.display()))?;
         fs::write(root.join("months/.gitkeep"), "")
@@ -366,7 +380,7 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use budget_core::{MonthId, calculate_month};
+    use budget_core::{AppConfig, MonthId, calculate_month};
     use tempfile::tempdir;
 
     use super::{Repository, SyncOutcome};
@@ -422,6 +436,23 @@ mod tests {
     }
 
     #[test]
+    fn init_repo_persists_explicit_initial_config() {
+        let temp = tempdir().unwrap();
+        let repo = temp.path().join("budget");
+        let mut config = AppConfig::default_mvp();
+        config.accounts[0].label = "Main balance".to_owned();
+        config.savings_pots[0].label = "Trip".to_owned();
+        config.savings_pots[0].default_monthly_change_minor = 4_200;
+        config.next_month_earmarks[0].label = "Bills".to_owned();
+        config.next_month_earmarks[0].default_amount_minor = 8_500;
+
+        Repository::init_with_config(&repo, None, &config).unwrap();
+
+        let opened = Repository::open(&repo).unwrap();
+        assert_eq!(opened.config(), &config);
+    }
+
+    #[test]
     fn clone_from_remote_opens_repo_gate() {
         let temp = tempdir().unwrap();
         let remote = temp.path().join("remote.git");
@@ -474,16 +505,16 @@ mod tests {
         let mut month = repository
             .create_month_draft(MonthId::parse("2026-03").unwrap())
             .unwrap();
-        month.accounts.insert("current".to_owned(), 100_000);
-        month.accounts.insert("cash_isa".to_owned(), 20_000);
-        month.accounts.insert("amex_credit".to_owned(), 5_000);
-        month.accounts.insert("nationwide_credit".to_owned(), 0);
+        month.accounts.insert("current_account".to_owned(), 100_000);
+        month.accounts.insert("savings_account".to_owned(), 20_000);
+        month.accounts.insert("credit_card_a".to_owned(), 5_000);
+        month.accounts.insert("credit_card_b".to_owned(), 0);
         month
             .next_month_earmarks
             .insert("subscriptions".to_owned(), 10_000);
         month
             .next_month_earmarks
-            .insert("general_spending".to_owned(), 37_500);
+            .insert("general_spending".to_owned(), 32_000);
         repository.save_month(&mut month).unwrap();
 
         let opened = repository
@@ -517,16 +548,16 @@ mod tests {
         let mut month = repository
             .create_month_draft(MonthId::parse("2026-03").unwrap())
             .unwrap();
-        month.accounts.insert("current".to_owned(), 100_000);
-        month.accounts.insert("cash_isa".to_owned(), 20_000);
-        month.accounts.insert("amex_credit".to_owned(), 5_000);
-        month.accounts.insert("nationwide_credit".to_owned(), 0);
+        month.accounts.insert("current_account".to_owned(), 100_000);
+        month.accounts.insert("savings_account".to_owned(), 20_000);
+        month.accounts.insert("credit_card_a".to_owned(), 5_000);
+        month.accounts.insert("credit_card_b".to_owned(), 0);
         month
             .next_month_earmarks
             .insert("subscriptions".to_owned(), 10_000);
         month
             .next_month_earmarks
-            .insert("general_spending".to_owned(), 37_500);
+            .insert("general_spending".to_owned(), 32_000);
         repository.save_month(&mut month).unwrap();
 
         let log = git_capture(&repo_path, &["log", "--oneline", "--max-count", "1"]);

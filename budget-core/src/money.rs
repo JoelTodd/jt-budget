@@ -190,8 +190,8 @@ mod tests {
 
     #[test]
     fn parses_unsigned_money() {
-        let parsed = parse_money_input("£245.00", false).unwrap();
-        assert_eq!(parsed, Money::from_minor(24_500));
+        let parsed = parse_money_input("£180.00", false).unwrap();
+        assert_eq!(parsed, Money::from_minor(18_000));
     }
 
     #[test]

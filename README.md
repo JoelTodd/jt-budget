@@ -15,7 +15,7 @@ First use:
 jt-budget setup
 ```
 
-GitHub-first setup expects `git` and GitHub CLI (`gh`). Local-only setup and advanced local adoption still exist inside the setup flow.
+GitHub-first setup expects `git` and GitHub CLI (`gh`). New budget setup also asks for account labels, savings pot labels and monthly changes, and next-month earmark labels and defaults. Local-only setup and advanced local adoption still exist inside the setup flow.
 
 Normal launch:
 

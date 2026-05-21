@@ -1,6 +1,6 @@
 ---
-source: budget-app/src/ui.rs
-expression: "buffer_to_string(draw_route(&route, Some(&config), 80, 24))"
+source: budget-app/src/ui/tests.rs
+expression: "buffer_to_string(draw_route(route, Some(config), width, height))"
 ---
 ┌Guided Creation───────────────────────────────────────────────────────────────┐
 │May 2026  |  Step 13/14                                                       │
@@ -10,7 +10,7 @@ expression: "buffer_to_string(draw_route(&route, Some(&config), 80, 24))"
 │Subscriptions                                                                 │
 │                                                                              │
 │Amount                                                                        │
-│£130.00                                                                       │
+│£120.00                                                                       │
 │                                                                              │
 │Enter saves this step.                                                        │
 │                                                                              │
@@ -18,8 +18,8 @@ expression: "buffer_to_string(draw_route(&route, Some(&config), 80, 24))"
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌Preview───────────────────────────────────────────────────────────────────────┐
-│Accounts £0.00  |  Pots £240.00                                               │
-│Earmarks £505.00  |  Diff -£745.00                                            │
+│Accounts £0.00  |  Pots £180.00                                               │
+│Earmarks £440.00  |  Diff -£620.00                                            │
 │Status invalid                                                                │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘

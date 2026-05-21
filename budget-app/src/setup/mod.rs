@@ -7,6 +7,7 @@ use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
+use budget_core::AppConfig;
 
 use crate::cli::SetupArgs;
 use crate::locator::RepoLocator;
@@ -18,7 +19,8 @@ use self::github::{
     parse_github_repo_ref, verify_github_repository_accessible,
 };
 use self::prompts::{
-    prompt_for_github_repo, prompt_for_optional_remote, prompt_for_repo_path, prompt_for_setup_mode,
+    prompt_for_github_repo, prompt_for_new_budget_config, prompt_for_optional_remote,
+    prompt_for_repo_path, prompt_for_setup_mode,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,9 +65,26 @@ pub fn prepare_repository(
     repo: PathBuf,
     remote: Option<&str>,
 ) -> Result<PathBuf> {
+    prepare_repository_with_config(locator, repo, remote, None)
+}
+
+fn prepare_repository_with_config(
+    locator: &RepoLocator,
+    repo: PathBuf,
+    remote: Option<&str>,
+    new_config: Option<&AppConfig>,
+) -> Result<PathBuf> {
     match classify_setup_target(&repo)? {
         SetupTarget::CreateNew => {
-            Repository::init(&repo, remote)
+            let default_config;
+            let config = match new_config {
+                Some(config) => config,
+                None => {
+                    default_config = AppConfig::default_mvp();
+                    &default_config
+                }
+            };
+            Repository::init_with_config(&repo, remote, config)
                 .with_context(|| format!("initialising repository `{}`", repo.display()))?;
         }
         SetupTarget::AdoptExisting => {
@@ -133,8 +152,9 @@ fn run_github_create_setup(
         &github_login,
         &repo,
     )?;
+    let new_config = resolve_new_budget_config(&repo, interactive)?;
 
-    prepare_github_created_repository(locator, repo, &github_repo)
+    prepare_github_created_repository(locator, repo, &github_repo, new_config.as_ref())
 }
 
 fn run_github_connect_setup(
@@ -158,7 +178,8 @@ fn run_local_only_setup(
     interactive: bool,
 ) -> Result<PathBuf> {
     let repo = resolve_repo_path(args.repo.as_deref(), interactive)?;
-    prepare_repository(locator, repo, None)
+    let new_config = resolve_new_budget_config(&repo, interactive)?;
+    prepare_repository_for_setup(locator, repo, None, new_config.as_ref())
 }
 
 fn run_adopt_local_setup(
@@ -169,17 +190,39 @@ fn run_adopt_local_setup(
     let repo = resolve_repo_path(args.repo.as_deref(), interactive)?;
     let target = classify_setup_target(&repo)?;
     let remote = resolve_remote(args.remote.as_deref(), interactive, &repo, target)?;
-    prepare_repository(locator, repo, remote.as_deref())
+    let new_config = resolve_new_budget_config(&repo, interactive)?;
+    prepare_repository_for_setup(locator, repo, remote.as_deref(), new_config.as_ref())
+}
+
+fn prepare_repository_for_setup(
+    locator: &RepoLocator,
+    repo: PathBuf,
+    remote: Option<&str>,
+    new_config: Option<&AppConfig>,
+) -> Result<PathBuf> {
+    match new_config {
+        Some(config) => prepare_repository_with_config(locator, repo, remote, Some(config)),
+        None => prepare_repository(locator, repo, remote),
+    }
 }
 
 fn prepare_github_created_repository(
     locator: &RepoLocator,
     repo: PathBuf,
     github_repo: &GithubRepoRef,
+    new_config: Option<&AppConfig>,
 ) -> Result<PathBuf> {
     match classify_setup_target(&repo)? {
         SetupTarget::CreateNew => {
-            Repository::init(&repo, None)
+            let default_config;
+            let config = match new_config {
+                Some(config) => config,
+                None => {
+                    default_config = AppConfig::default_mvp();
+                    &default_config
+                }
+            };
+            Repository::init_with_config(&repo, None, config)
                 .with_context(|| format!("initialising repository `{}`", repo.display()))?;
         }
         SetupTarget::AdoptExisting => {
@@ -328,6 +371,14 @@ fn resolve_remote(
     prompt_for_optional_remote()
 }
 
+fn resolve_new_budget_config(repo: &Path, interactive: bool) -> Result<Option<AppConfig>> {
+    if !interactive || classify_setup_target(repo)? != SetupTarget::CreateNew {
+        return Ok(None);
+    }
+
+    prompt_for_new_budget_config(&AppConfig::default_mvp()).map(Some)
+}
+
 fn classify_setup_target(repo: &Path) -> Result<SetupTarget> {
     if !repo.exists() {
         return Ok(SetupTarget::CreateNew);
@@ -453,20 +504,20 @@ mod tests {
     #[test]
     fn github_repo_matches_https_and_ssh_remotes() {
         let repo = GithubRepoRef {
-            owner: "JoelTodd".to_owned(),
+            owner: "example-user".to_owned(),
             name: "budget".to_owned(),
         };
 
-        assert!(repo.matches_remote("https://github.com/JoelTodd/budget.git"));
-        assert!(repo.matches_remote("git@github.com:JoelTodd/budget.git"));
-        assert!(!repo.matches_remote("https://github.com/JoelTodd/other.git"));
+        assert!(repo.matches_remote("https://github.com/example-user/budget.git"));
+        assert!(repo.matches_remote("git@github.com:example-user/budget.git"));
+        assert!(!repo.matches_remote("https://github.com/example-user/other.git"));
     }
 
     #[test]
     fn github_remote_name_with_owner_rejects_non_github_paths() {
         assert_eq!(
-            github_remote_name_with_owner("https://github.com/JoelTodd/budget.git"),
-            Some("JoelTodd/budget".to_owned())
+            github_remote_name_with_owner("https://github.com/example-user/budget.git"),
+            Some("example-user/budget".to_owned())
         );
         assert_eq!(github_remote_name_with_owner("/tmp/budget.git"), None);
     }
