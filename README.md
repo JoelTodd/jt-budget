@@ -79,6 +79,13 @@ The bundled Base24 palette lives in [`budget-app/theme.toml`](budget-app/theme.t
 - Guided creation: type amount, `Enter` save/advance, `Esc` back.
 - Monthly sheet: `Tab`/`Up`/`Down` move, `Enter` edit field, `Esc` back, `q` quit.
 
+## Support
+
+This is a personal project published for source visibility. GitHub issues are
+welcome for reproducible bugs in the app, but outside contributions are not
+being solicited for the first public release. The project does not provide
+personal budgeting advice.
+
 ## Verification
 
 ```bash

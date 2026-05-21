@@ -52,9 +52,8 @@ Goal: make the public repo enforce the quality bar it already expects locally.
   `cargo test`
   `cargo build --release`
 - [ ] Enable branch protection for the default branch. Deferred for the first public release.
-- [x] Enable GitHub secret scanning if available. GitHub does not make it available
-  while this user-owned repository is private; public repositories are scanned
-  automatically, and alerts can be enabled once the repository is public.
+- [x] Enable GitHub secret scanning if available. Enabled after the repository
+  was made public on 21 May 2026; the alert query returned no current alerts.
 - [x] Decide whether to enable Dependabot updates and alerts. Leave them disabled
   for the first public release.
 - [x] Decide whether issues, Discussions, Projects, and wiki should be enabled or
@@ -65,11 +64,19 @@ Goal: make the public repo enforce the quality bar it already expects locally.
 
 Goal: make it clear how outside people should interact with the project.
 
-- [ ] Decide whether you want outside contributions or whether the repo is mainly for source visibility.
-- [ ] If accepting contributions, add `CONTRIBUTING.md`.
-- [ ] Add `SECURITY.md` if you want a defined vulnerability reporting path.
-- [ ] Add `CODE_OF_CONDUCT.md` if you want standard community expectations in place.
-- [ ] Decide how support requests should be handled and document that in `README.md` or `SUPPORT.md`.
+- [x] Decide whether you want outside contributions or whether the repo is mainly
+  for source visibility. Keep the first public release focused on source
+  visibility.
+- [x] If accepting contributions, add `CONTRIBUTING.md`. Outside contributions
+  are not being solicited for the first public release, so keep this out of the
+  initial public surface.
+- [x] Add `SECURITY.md` if you want a defined vulnerability reporting path.
+  Defer a dedicated reporting path for the source-visibility release.
+- [x] Add `CODE_OF_CONDUCT.md` if you want standard community expectations in
+  place. Defer it while outside contributions are not being solicited.
+- [x] Decide how support requests should be handled and document that in
+  `README.md` or `SUPPORT.md`. The README accepts reproducible bug reports
+  through GitHub issues and excludes personal budgeting advice.
 
 ## 6. Final Go-Live Checks
 
