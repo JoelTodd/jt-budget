@@ -46,15 +46,20 @@ Goal: make the project understandable to somebody who is not already inside the 
 
 Goal: make the public repo enforce the quality bar it already expects locally.
 
-- [ ] Add CI to run:
+- [x] Add CI to run:
   `cargo fmt --check`
   `cargo clippy --all-targets --all-features -- -D warnings`
   `cargo test`
   `cargo build --release`
-- [ ] Enable branch protection for the default branch.
-- [ ] Enable GitHub secret scanning if available.
-- [ ] Decide whether to enable Dependabot updates and alerts.
-- [ ] Decide whether issues, Discussions, Projects, and wiki should be enabled or disabled.
+- [ ] Enable branch protection for the default branch. Deferred for the first public release.
+- [x] Enable GitHub secret scanning if available. GitHub does not make it available
+  while this user-owned repository is private; public repositories are scanned
+  automatically, and alerts can be enabled once the repository is public.
+- [x] Decide whether to enable Dependabot updates and alerts. Leave them disabled
+  for the first public release.
+- [x] Decide whether issues, Discussions, Projects, and wiki should be enabled or
+  disabled. Keep issues enabled and leave Discussions, Projects, and wiki
+  disabled until they are needed.
 
 ## 5. Contribution And Support Policy
 
