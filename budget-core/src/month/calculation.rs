@@ -113,6 +113,48 @@ pub fn calculate_month(
     document: &MonthDocument,
 ) -> Result<CalculatedMonth, BudgetError> {
     config.validate()?;
+    verify_document_keys(config, document)?;
+
+    let account_rows = config
+        .accounts
+        .iter()
+        .map(|account| calculate_account_row(account, document))
+        .collect::<Result<Vec<_>, _>>()?;
+    let accounts_subtotal: Money = account_rows.iter().map(|row| row.normalised_balance).sum();
+    let timing = calculate_timing(document)?;
+    let earmark_rows = calculate_earmark_rows(config, document)?;
+    let next_month_earmarks_subtotal: Money = earmark_rows.iter().map(|row| row.amount).sum();
+    let pot_rows = calculate_pot_rows(config, document)?;
+    let pots_carried_total: Money = pot_rows.iter().map(|row| row.carried_over).sum();
+    let pots_monthly_change_total: Money = pot_rows.iter().map(|row| row.monthly_change).sum();
+    let pots_final_total: Money = pot_rows.iter().map(|row| row.final_balance).sum();
+
+    let timing_adjustments_subtotal = timing.subtotal;
+    let net_available = accounts_subtotal + timing_adjustments_subtotal;
+    let total_allocated = pots_final_total + next_month_earmarks_subtotal;
+    let validation = calculate_validation(config, net_available, total_allocated);
+
+    Ok(CalculatedMonth {
+        month: document.month,
+        account_rows,
+        timing,
+        earmark_rows,
+        pot_rows,
+        totals: Totals {
+            accounts_subtotal,
+            timing_adjustments_subtotal,
+            net_available,
+            pots_carried_total,
+            pots_monthly_change_total,
+            pots_final_total,
+            next_month_earmarks_subtotal,
+            total_allocated,
+        },
+        validation,
+    })
+}
+
+fn verify_document_keys(config: &AppConfig, document: &MonthDocument) -> Result<(), BudgetError> {
     // Keep derived values trustworthy by validating that the persisted document
     // matches the configured set of editable fields exactly.
     verify_expected_keys(
@@ -141,22 +183,17 @@ pub fn calculate_month(
             .iter()
             .map(|pot| pot.id.clone())
             .collect(),
-    )?;
+    )
+}
 
-    let account_rows = config
-        .accounts
-        .iter()
-        .map(|account| calculate_account_row(account, document))
-        .collect::<Result<Vec<_>, _>>()?;
-    let accounts_subtotal: Money = account_rows.iter().map(|row| row.normalised_balance).sum();
-
+fn calculate_timing(document: &MonthDocument) -> Result<TimingCalculation, BudgetError> {
     if document.timing_adjustments.investment_not_yet_sent_raw < 0 {
         return Err(BudgetError::NegativeValue {
             field: "timing_adjustments.investment_not_yet_sent_raw".to_owned(),
         });
     }
 
-    let timing = TimingCalculation {
+    Ok(TimingCalculation {
         investment_not_yet_sent_raw: Money::from_minor(
             document.timing_adjustments.investment_not_yet_sent_raw,
         ),
@@ -179,9 +216,14 @@ pub fn calculate_month(
                 .previous_month_spending_correction_raw
                 - document.timing_adjustments.investment_not_yet_sent_raw,
         ),
-    };
+    })
+}
 
-    let earmark_rows = config
+fn calculate_earmark_rows(
+    config: &AppConfig,
+    document: &MonthDocument,
+) -> Result<Vec<EarmarkRow>, BudgetError> {
+    config
         .next_month_earmarks
         .iter()
         .map(|item| {
@@ -202,77 +244,64 @@ pub fn calculate_month(
                 amount: Money::from_minor(amount),
             })
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    let next_month_earmarks_subtotal: Money = earmark_rows.iter().map(|row| row.amount).sum();
+        .collect()
+}
 
-    let pot_rows =
-        config
-            .savings_pots
-            .iter()
-            .map(|pot| {
-                let state = document.savings_pots.get(&pot.id).ok_or_else(|| {
-                    BudgetError::MissingEntry {
+fn calculate_pot_rows(
+    config: &AppConfig,
+    document: &MonthDocument,
+) -> Result<Vec<PotRow>, BudgetError> {
+    config
+        .savings_pots
+        .iter()
+        .map(|pot| {
+            let state =
+                document
+                    .savings_pots
+                    .get(&pot.id)
+                    .ok_or_else(|| BudgetError::MissingEntry {
                         section: "savings_pots",
                         id: pot.id.clone(),
-                    }
-                })?;
-                if state.carried_over < 0 {
-                    return Err(BudgetError::NegativeValue {
-                        field: format!("savings_pots.{}.carried_over", pot.id),
-                    });
-                }
-                let final_balance = state.carried_over + state.monthly_change;
-                if final_balance < 0 {
-                    return Err(BudgetError::NegativePotFinal {
-                        id: pot.id.clone(),
-                        carried_over: state.carried_over,
-                        monthly_change: state.monthly_change,
-                    });
-                }
-                Ok(PotRow {
+                    })?;
+            if state.carried_over < 0 {
+                return Err(BudgetError::NegativeValue {
+                    field: format!("savings_pots.{}.carried_over", pot.id),
+                });
+            }
+            let final_balance = state.carried_over + state.monthly_change;
+            if final_balance < 0 {
+                return Err(BudgetError::NegativePotFinal {
                     id: pot.id.clone(),
-                    label: pot.label.clone(),
-                    carried_over: Money::from_minor(state.carried_over),
-                    monthly_change: Money::from_minor(state.monthly_change),
-                    final_balance: Money::from_minor(final_balance),
-                })
+                    carried_over: state.carried_over,
+                    monthly_change: state.monthly_change,
+                });
+            }
+            Ok(PotRow {
+                id: pot.id.clone(),
+                label: pot.label.clone(),
+                carried_over: Money::from_minor(state.carried_over),
+                monthly_change: Money::from_minor(state.monthly_change),
+                final_balance: Money::from_minor(final_balance),
             })
-            .collect::<Result<Vec<_>, _>>()?;
+        })
+        .collect()
+}
 
-    let pots_carried_total: Money = pot_rows.iter().map(|row| row.carried_over).sum();
-    let pots_monthly_change_total: Money = pot_rows.iter().map(|row| row.monthly_change).sum();
-    let pots_final_total: Money = pot_rows.iter().map(|row| row.final_balance).sum();
-
-    let timing_adjustments_subtotal = timing.subtotal;
-    let net_available = accounts_subtotal + timing_adjustments_subtotal;
-    let total_allocated = pots_final_total + next_month_earmarks_subtotal;
+fn calculate_validation(
+    config: &AppConfig,
+    net_available: Money,
+    total_allocated: Money,
+) -> ValidationState {
     let overall_difference = net_available - total_allocated;
     let tolerance = Money::from_minor(config.validation_tolerance_minor);
     let is_valid = (-tolerance).minor() <= overall_difference.minor()
         && overall_difference.minor() <= tolerance.minor();
 
-    Ok(CalculatedMonth {
-        month: document.month,
-        account_rows,
-        timing,
-        earmark_rows,
-        pot_rows,
-        totals: Totals {
-            accounts_subtotal,
-            timing_adjustments_subtotal,
-            net_available,
-            pots_carried_total,
-            pots_monthly_change_total,
-            pots_final_total,
-            next_month_earmarks_subtotal,
-            total_allocated,
-        },
-        validation: ValidationState {
-            tolerance,
-            overall_difference,
-            is_valid,
-        },
-    })
+    ValidationState {
+        tolerance,
+        overall_difference,
+        is_valid,
+    }
 }
 
 fn calculate_account_row(

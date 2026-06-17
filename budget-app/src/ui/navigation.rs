@@ -20,6 +20,21 @@ pub(super) fn render_navigation(
     theme: &UiTheme,
 ) {
     let compact = frame.area().width < 110 || frame.area().height < 28;
+    let content_area = render_navigation_header(frame, state, repo_root, compact, theme);
+    render_navigation_body(frame, state, content_area, compact, theme);
+
+    if let Some(dialogue) = &state.dialogue {
+        render_navigation_dialogue(frame, dialogue, theme);
+    }
+}
+
+fn render_navigation_header(
+    frame: &mut Frame<'_>,
+    state: &NavigationState,
+    repo_root: &Path,
+    compact: bool,
+    theme: &UiTheme,
+) -> Rect {
     let mut header_lines = vec![Line::from(vec![
         Span::styled("Repo: ", theme.muted_style()),
         Span::styled(
@@ -72,24 +87,38 @@ pub(super) fn render_navigation(
         ));
     frame.render_widget(header, layout[0]);
 
+    layout[1]
+}
+
+fn render_navigation_body(
+    frame: &mut Frame<'_>,
+    state: &NavigationState,
+    area: Rect,
+    compact: bool,
+    theme: &UiTheme,
+) {
     // Compact terminals stack the table over the summary so both remain usable
     // at 80x24 without horizontal truncation.
     let body = if compact {
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-            .split(layout[1])
+            .split(area)
     } else {
         Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-            .split(layout[1])
+            .split(area)
     };
+    render_month_table(frame, body[0], state, theme);
+    render_navigation_summary(frame, body[1], state, theme);
+}
 
+fn render_month_table(frame: &mut Frame<'_>, area: Rect, state: &NavigationState, theme: &UiTheme) {
     let visible_months = visible_month_window(
         state.months.len(),
         state.selected,
-        body[0].height.saturating_sub(3) as usize,
+        area.height.saturating_sub(3) as usize,
     );
     let visible_start = visible_months.start;
     let rows = state.months[visible_months].iter().map(|entry| {
@@ -147,10 +176,17 @@ pub(super) fn render_navigation(
     if !state.months.is_empty() {
         table_state.select(Some(state.selected.saturating_sub(visible_start)));
     }
-    frame.render_stateful_widget(months_table, body[0], &mut table_state);
+    frame.render_stateful_widget(months_table, area, &mut table_state);
+}
 
+fn render_navigation_summary(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &NavigationState,
+    theme: &UiTheme,
+) {
     let summary_text = if let Some(entry) = state.selected_month() {
-        compact_summary_text(&entry.calculated, body[1].width, theme)
+        compact_summary_text(&entry.calculated, area.width, theme)
     } else {
         Text::from("No months yet.\nPress `n` to create the first month.")
     };
@@ -163,11 +199,7 @@ pub(super) fn render_navigation(
             theme,
         ))
         .wrap(Wrap { trim: false });
-    frame.render_widget(summary, body[1]);
-
-    if let Some(dialogue) = &state.dialogue {
-        render_navigation_dialogue(frame, dialogue, theme);
-    }
+    frame.render_widget(summary, area);
 }
 
 fn visible_month_window(total: usize, selected: usize, visible_rows: usize) -> Range<usize> {
