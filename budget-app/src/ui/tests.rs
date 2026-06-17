@@ -1,4 +1,4 @@
-use budget_core::AppConfig;
+use budget_core::{AppConfig, MonthId, calculate_month};
 use ratatui::prelude::{Color, Modifier};
 
 use super::test_support::{
@@ -9,7 +9,10 @@ use super::theme::{
     Base24PaletteConfig, ThemeConfig, Tone, UiTheme, month_state_style, operational_status_style,
     parse_hex_triplet, rgb, status_value_style,
 };
-use crate::state::{InteractionState, NavigationState, Route};
+use crate::state::{
+    FailureState, InteractionState, MonthEntry, NavigationState, RepositoryGateState, RetryTarget,
+    Route,
+};
 
 fn assert_snapshot_for_size(
     snapshot_name: &str,
@@ -51,6 +54,59 @@ fn navigation_snapshot_210x48() {
     let config = AppConfig::default_mvp();
     let route = navigation_route(&config);
     assert_snapshot_for_size("navigation_snapshot_210x48", &route, &config, 210, 48);
+}
+
+#[test]
+fn repository_gate_render_shows_sync_context() {
+    let config = AppConfig::default_mvp();
+    let route = repository_gate_route();
+    let rendered = buffer_to_string(draw_route(&route, Some(&config), 80, 24));
+
+    assert!(rendered.contains("Repository Gate"));
+    assert!(rendered.contains("Checking repository and syncing latest changes"));
+    assert!(rendered.contains("Repo:"));
+}
+
+#[test]
+fn repository_gate_snapshot_80x24() {
+    let config = AppConfig::default_mvp();
+    let route = repository_gate_route();
+    assert_snapshot_for_size("repository_gate_snapshot_80x24", &route, &config, 80, 24);
+}
+
+#[test]
+fn repository_gate_snapshot_105x48() {
+    let config = AppConfig::default_mvp();
+    let route = repository_gate_route();
+    assert_snapshot_for_size("repository_gate_snapshot_105x48", &route, &config, 105, 48);
+}
+
+#[test]
+fn repository_gate_snapshot_210x48() {
+    let config = AppConfig::default_mvp();
+    let route = repository_gate_route();
+    assert_snapshot_for_size("repository_gate_snapshot_210x48", &route, &config, 210, 48);
+}
+
+#[test]
+fn blocking_failure_snapshot_80x24() {
+    let config = AppConfig::default_mvp();
+    let route = blocking_failure_route();
+    assert_snapshot_for_size("blocking_failure_snapshot_80x24", &route, &config, 80, 24);
+}
+
+#[test]
+fn blocking_failure_snapshot_105x48() {
+    let config = AppConfig::default_mvp();
+    let route = blocking_failure_route();
+    assert_snapshot_for_size("blocking_failure_snapshot_105x48", &route, &config, 105, 48);
+}
+
+#[test]
+fn blocking_failure_snapshot_210x48() {
+    let config = AppConfig::default_mvp();
+    let route = blocking_failure_route();
+    assert_snapshot_for_size("blocking_failure_snapshot_210x48", &route, &config, 210, 48);
 }
 
 #[test]
@@ -112,6 +168,35 @@ fn navigation_render_uses_semantic_status_and_difference_colours() {
             .fg
             .expect("difference tone sets a foreground colour")
     );
+}
+
+#[test]
+fn navigation_render_keeps_far_selected_month_visible_in_long_history() {
+    let config = AppConfig::default_mvp();
+    let template = match navigation_route(&config) {
+        Route::Navigation(state) => state.months[0].document.clone(),
+        _ => unreachable!(),
+    };
+    let months = (0..120)
+        .map(|index| {
+            let year = 2020 + index / 12;
+            let month = index % 12 + 1;
+            let mut document = template.clone();
+            document.month = MonthId::new(year, month as u8).unwrap();
+            let calculated = calculate_month(&config, &document).unwrap();
+            MonthEntry {
+                document,
+                calculated,
+            }
+        })
+        .collect();
+    let mut state = NavigationState::new(months);
+    state.selected = 119;
+    let route = Route::Navigation(state);
+    let rendered = buffer_to_string(draw_route(&route, Some(&config), 80, 24));
+
+    assert!(rendered.contains("December 2029"));
+    assert!(!rendered.contains("January 2020"));
 }
 
 #[test]
@@ -460,6 +545,20 @@ fn guided_status_prioritises_validation_above_operational_metadata() {
     let (_, validation_y) = find_text(&buffer, "outside tolerance").unwrap();
     let (_, persistence_y) = find_text(&buffer, "Persistence").unwrap();
     assert!(validation_y < persistence_y);
+}
+
+fn repository_gate_route() -> Route {
+    Route::RepositoryGate(RepositoryGateState {
+        message: "Checking repository and syncing latest changes".to_owned(),
+    })
+}
+
+fn blocking_failure_route() -> Route {
+    Route::BlockingFailure(FailureState {
+        title: "Repository blocked".to_owned(),
+        message: "pulling latest budget data failed: remote rejected update".to_owned(),
+        retry: RetryTarget::RepositoryGate,
+    })
 }
 
 #[test]

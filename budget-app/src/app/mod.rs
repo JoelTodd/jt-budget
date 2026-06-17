@@ -27,7 +27,7 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use crate::repository::Repository;
-use crate::state::Route;
+use crate::state::{RepositoryGateState, Route};
 use crate::ui;
 
 type AppTerminal = Terminal<CrosstermBackend<Stdout>>;
@@ -49,13 +49,13 @@ struct App {
 
 impl App {
     fn bootstrap(repo_root: PathBuf) -> Self {
-        let mut app = Self {
+        Self {
             repo_root,
             repository: None,
-            route: Route::Shutdown,
-        };
-        app.enter_repository_gate();
-        app
+            route: Route::RepositoryGate(RepositoryGateState {
+                message: "Checking repository and syncing latest changes".to_owned(),
+            }),
+        }
     }
 
     fn run_loop(&mut self, terminal: &mut AppTerminal) -> Result<()> {
@@ -71,6 +71,14 @@ impl App {
 
             if matches!(self.route, Route::Shutdown) {
                 return Ok(());
+            }
+
+            if self.process_repository_gate() {
+                continue;
+            }
+
+            if self.process_pending_sync()? {
+                continue;
             }
 
             // Poll with a short timeout so the UI stays responsive without
@@ -92,7 +100,14 @@ impl App {
             return Ok(());
         }
 
-        match self.route.clone() {
+        // Route states can hold full documents and rendered calculation
+        // context, so move the active route into the specific handler instead
+        // of cloning it for every keypress.
+        match std::mem::replace(&mut self.route, Route::Shutdown) {
+            Route::RepositoryGate(state) => {
+                self.route = Route::RepositoryGate(state);
+                Ok(())
+            }
             Route::Navigation(state) => self.handle_navigation_key(state, key),
             Route::GuidedCreation(state) => self.handle_guided_key(state, key),
             Route::MonthEditing(state) => self.handle_editor_key(state, key),
@@ -117,6 +132,21 @@ impl App {
         } else {
             local_message.to_owned()
         })
+    }
+
+    fn process_repository_gate(&mut self) -> bool {
+        if !matches!(self.route, Route::RepositoryGate(_)) {
+            return false;
+        }
+        self.enter_repository_gate();
+        true
+    }
+
+    fn show_repository_gate(&mut self) {
+        self.repository = None;
+        self.route = Route::RepositoryGate(RepositoryGateState {
+            message: "Checking repository and syncing latest changes".to_owned(),
+        });
     }
 }
 

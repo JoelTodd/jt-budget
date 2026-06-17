@@ -6,7 +6,8 @@ use super::App;
 use super::document::{is_money_input_character, update_document_field};
 use crate::repository::LoadedMonth;
 use crate::state::{
-    EditorState, FieldId, InteractionState, PersistenceState, RetryTarget, Route, SyncState,
+    EditorState, FieldId, InteractionState, MonthEntry, PersistenceState, RetryTarget, Route,
+    SyncState,
 };
 
 impl App {
@@ -19,7 +20,7 @@ impl App {
             InteractionState::SheetIdle => {
                 match key.code {
                     KeyCode::Char('q') => self.route = Route::Shutdown,
-                    KeyCode::Esc => self.reload_navigation(Some(state.document.month)),
+                    KeyCode::Esc => self.return_to_navigation(state)?,
                     KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
                         state.focus_index =
                             (state.focus_index + 1).min(state.fields.len().saturating_sub(1));
@@ -72,6 +73,24 @@ impl App {
         }
     }
 
+    fn return_to_navigation(&mut self, state: EditorState) -> Result<()> {
+        let selected = state.document.month;
+        if let Some(cached) = state.return_navigation {
+            if let Some(expected) = cached.fingerprint.as_ref()
+                && self
+                    .repository()
+                    .and_then(|repository| repository.month_file_fingerprint())
+                    .is_ok_and(|current| current == *expected)
+            {
+                self.route = Route::Navigation(*cached);
+                return Ok(());
+            }
+        }
+
+        self.reload_navigation(Some(selected));
+        Ok(())
+    }
+
     pub(super) fn commit_editor_field(&mut self, mut state: EditorState) -> Result<()> {
         let field = state.fields[state.focus_index].clone();
         let Some(buffer) = state.edit_buffer.clone() else {
@@ -80,7 +99,14 @@ impl App {
         };
 
         match update_document_field(&mut state.document, &field, &buffer) {
-            Ok(()) => match calculate_month(self.config()?, &state.document) {
+            Ok(false) => {
+                state.edit_buffer = None;
+                state.interaction = InteractionState::SheetIdle;
+                state.message = None;
+                self.route = Route::MonthEditing(state);
+                Ok(())
+            }
+            Ok(true) => match calculate_month(self.config()?, &state.document) {
                 Ok(calculated) => {
                     // Only persist documents that still satisfy the domain
                     // rules after the field edit has been applied.
@@ -103,18 +129,86 @@ impl App {
         }
     }
 
-    pub(super) fn persist_editor_state(&mut self, state: EditorState) -> Result<()> {
+    pub(super) fn persist_editor_state(&mut self, mut state: EditorState) -> Result<()> {
+        if self.repository()?.sync_enabled() {
+            state.persistence = PersistenceState::Autosaving;
+            state.sync = SyncState::SyncPending;
+            let repository = self.repository()?;
+            match repository.save_month_local_commit(&mut state.document) {
+                Ok(()) => {
+                    let calculated = calculate_month(self.config()?, &state.document)?;
+                    state.calculated = calculated;
+                    state.persistence = PersistenceState::Clean;
+                    state.sync = SyncState::SyncPending;
+                    state.message = Some("Month autosaved; sync pending".to_owned());
+                    self.update_return_navigation_after_editor_save(&mut state);
+                    self.route = Route::MonthEditing(state);
+                }
+                Err(error) => {
+                    state.persistence = PersistenceState::SaveFailed;
+                    state.sync = SyncState::SyncFailed;
+                    self.route = Route::BlockingFailure(crate::state::FailureState {
+                        title: format!("Could not save {}", state.document.month),
+                        message: error.to_string(),
+                        retry: RetryTarget::EditorSave(state),
+                    });
+                }
+            }
+            return Ok(());
+        }
+
         match self.persist_route_state(
             state,
             "Month autosaved",
             |state| format!("Could not save {}", state.document.month),
             RetryTarget::EditorSave,
         )? {
-            Some(state) => {
+            Some(mut state) => {
+                self.update_return_navigation_after_editor_save(&mut state);
                 self.route = Route::MonthEditing(state);
                 Ok(())
             }
             None => Ok(()),
+        }
+    }
+
+    fn update_return_navigation_after_editor_save(&self, state: &mut EditorState) {
+        let Some(navigation) = state.return_navigation.as_mut() else {
+            return;
+        };
+        let month = state.document.month;
+        let Some(index) = navigation
+            .months
+            .iter()
+            .position(|entry| entry.document.month == month)
+        else {
+            state.return_navigation = None;
+            return;
+        };
+
+        navigation.months[index] = MonthEntry {
+            document: state.document.clone(),
+            calculated: state.calculated.clone(),
+        };
+        navigation.selected = index;
+
+        let Some(fingerprint) = navigation.fingerprint.as_mut() else {
+            return;
+        };
+        let Ok(current) = self
+            .repository()
+            .and_then(|repository| repository.month_file_fingerprint_for_month(month))
+        else {
+            state.return_navigation = None;
+            return;
+        };
+        if let Some(existing) = fingerprint
+            .iter_mut()
+            .find(|(fingerprint_month, _)| *fingerprint_month == month)
+        {
+            *existing = current;
+        } else {
+            state.return_navigation = None;
         }
     }
 
@@ -149,6 +243,7 @@ impl App {
             interaction: InteractionState::SheetIdle,
             persistence: PersistenceState::Clean,
             sync: SyncState::Synced,
+            return_navigation: None,
         }
     }
 }

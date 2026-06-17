@@ -1,14 +1,18 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output};
 
 use anyhow::{Context, Result, anyhow, bail};
-use tracing::warn;
-
 const DEFAULT_BRANCH: &str = "main";
 
 #[derive(Clone, Debug)]
 pub(super) struct GitRepo {
     root: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TrackedCommitOutcome {
+    Committed,
+    PathNotTracked,
 }
 
 impl GitRepo {
@@ -20,7 +24,7 @@ impl GitRepo {
         self.run(["init", "-b", DEFAULT_BRANCH])?;
         self.run(["config", "user.name", "jt-budget"])?;
         self.run(["config", "user.email", "jt-budget@example.invalid"])?;
-        self.run(["add", "."])?;
+        self.run(["add", "--", "."])?;
         self.run(["commit", "-m", "Initialise budget repository"])?;
         Ok(())
     }
@@ -32,28 +36,34 @@ impl GitRepo {
     }
 
     pub(super) fn has_remote_named(&self, remote: &str) -> Result<bool> {
-        let remote_key = format!("remote.{remote}.url");
         let output = Command::new("git")
-            .args(["config", "--get", &remote_key])
+            .args(["remote", "get-url", remote])
             .current_dir(&self.root)
             .output()
             .with_context(|| {
                 format!(
-                    "running `git config --get {remote_key}` in `{}`",
+                    "running `git remote get-url {remote}` in `{}`",
                     self.root.display()
                 )
             })?;
         if output.status.success() {
             return Ok(true);
         }
-        if output.status.code() == Some(1) {
+        if output.status.code() == Some(2) {
             return Ok(false);
         }
         bail!(
-            "git config --get {} failed: {}",
-            remote_key,
-            String::from_utf8_lossy(&output.stderr).trim()
+            "{}",
+            git_failure_message(&["remote", "get-url", remote], &output)
         );
+    }
+
+    pub(super) fn has_remote_named_for_startup(&self, remote: &str) -> Result<bool> {
+        if self.has_remote_named_in_plain_config(remote)? == Some(true) {
+            return Ok(true);
+        }
+
+        self.has_remote_named(remote)
     }
 
     pub(super) fn remote_url(&self, remote: &str) -> Result<String> {
@@ -79,7 +89,7 @@ impl GitRepo {
     }
 
     pub(super) fn pull_ff_only(&self) -> Result<()> {
-        self.run(["pull", "--ff-only"]).map(|_| ())
+        self.run(["pull", "--ff-only", "--quiet"]).map(|_| ())
     }
 
     pub(super) fn stage_and_commit_paths(
@@ -95,25 +105,53 @@ impl GitRepo {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let mut args = vec!["add", "-A"];
+        let mut args = vec!["add", "-A", "--"];
         args.extend(relative_text.iter().copied());
         self.run_slice(&args)?;
 
-        let status = Command::new("git")
-            .args(["diff", "--cached", "--quiet", "--exit-code"])
-            .current_dir(&self.root)
-            .status()
-            .context("checking staged diff")?;
-        if status.success() {
-            warn!(
-                "no staged diff for {:?}; pushing existing commits if needed",
-                relative_paths
-            );
-        } else {
-            self.run(["commit", "-m", message])
-                .context("committing repository changes")?;
-        }
+        self.run(["commit", "-m", message])
+            .context("committing repository changes")?;
         Ok(())
+    }
+
+    pub(super) fn commit_tracked_path(
+        &self,
+        relative_path: &Path,
+        message: &str,
+    ) -> Result<TrackedCommitOutcome> {
+        let relative_text = relative_path
+            .to_str()
+            .ok_or_else(|| anyhow!("path `{}` is not valid utf-8", relative_path.display()))?;
+        let args = [
+            "commit",
+            "--quiet",
+            "--only",
+            "-m",
+            message,
+            "--",
+            relative_text,
+        ];
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&self.root)
+            .output()
+            .with_context(|| {
+                format!(
+                    "running `git {}` in `{}`",
+                    args.join(" "),
+                    self.root.display()
+                )
+            })?;
+        if output.status.success() {
+            return Ok(TrackedCommitOutcome::Committed);
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("did not match any file(s) known to git") {
+            return Ok(TrackedCommitOutcome::PathNotTracked);
+        }
+
+        bail!("{}", git_failure_message(&args, &output));
     }
 
     pub(super) fn push(&self) -> Result<()> {
@@ -138,8 +176,8 @@ impl GitRepo {
             return Ok(false);
         }
         bail!(
-            "git rev-parse --is-inside-work-tree failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            "{}",
+            git_failure_message(&["rev-parse", "--is-inside-work-tree"], &output)
         );
     }
 
@@ -162,11 +200,18 @@ impl GitRepo {
         if output.status.success() {
             return Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned());
         }
-        bail!(
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        bail!("{}", git_failure_message(args, &output));
+    }
+
+    fn has_remote_named_in_plain_config(&self, remote: &str) -> Result<Option<bool>> {
+        let config_path = self.root.join(".git/config");
+        if !config_path.is_file() {
+            return Ok(None);
+        }
+
+        let config = std::fs::read_to_string(&config_path)
+            .with_context(|| format!("reading `{}`", config_path.display()))?;
+        Ok(Some(git_config_has_remote_url(&config, remote)))
     }
 }
 
@@ -175,13 +220,13 @@ pub(super) fn clone_from_remote(remote: &str, target: &Path) -> Result<()> {
         .arg("clone")
         .arg("--origin")
         .arg("origin")
+        .arg("--")
         .arg(remote)
         .arg(target)
-        .stdout(Stdio::null())
         .output()
         .with_context(|| {
             format!(
-                "running `git clone --origin origin {remote} {}`",
+                "running `git clone --origin origin -- {remote} {}`",
                 target.display()
             )
         })?;
@@ -190,7 +235,78 @@ pub(super) fn clone_from_remote(remote: &str, target: &Path) -> Result<()> {
     }
 
     bail!(
-        "git clone failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
+        "{}",
+        git_failure_message(&["clone", "--origin", "origin", "--", remote], &output)
     );
+}
+
+fn git_failure_message(args: &[&str], output: &Output) -> String {
+    format!(
+        "git {} failed\nstdout:\n{}\nstderr:\n{}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stdout).trim(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    )
+}
+
+fn git_config_has_remote_url(config: &str, remote: &str) -> bool {
+    let remote_section = format!(r#"[remote "{remote}"]"#);
+    let mut in_remote_section = false;
+
+    for line in config.lines() {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            in_remote_section = line == remote_section;
+            continue;
+        }
+
+        if !in_remote_section {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim().eq_ignore_ascii_case("url") && !value.trim().is_empty() {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::git_config_has_remote_url;
+
+    #[test]
+    fn git_config_remote_detection_requires_url_in_matching_section() {
+        let config = r#"
+[core]
+	repositoryformatversion = 0
+[remote "upstream"]
+	url = ../upstream.git
+[remote "origin"]
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	url = ../origin.git
+"#;
+
+        assert!(git_config_has_remote_url(config, "origin"));
+        assert!(git_config_has_remote_url(config, "upstream"));
+        assert!(!git_config_has_remote_url(config, "missing"));
+    }
+
+    #[test]
+    fn git_config_remote_detection_ignores_empty_or_unrelated_url() {
+        let config = r#"
+[remote "upstream"]
+	url = ../upstream.git
+[remote "origin"]
+	url =
+[branch "main"]
+	remote = origin
+"#;
+
+        assert!(!git_config_has_remote_url(config, "origin"));
+    }
 }

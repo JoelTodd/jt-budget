@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use budget_core::{CalculatedMonth, MonthDocument};
+use budget_core::CalculatedMonth;
 use ratatui::prelude::{Alignment, Line, Span, Style, Text};
 use ratatui::widgets::{Block, Borders, Cell};
 
@@ -25,7 +25,14 @@ pub(super) fn selected_field(state: &EditorState) -> Option<&FieldId> {
 }
 
 pub(super) fn field_focus_state(state: &EditorState, field: &FieldId) -> EditorFocusState {
-    if selected_field(state).is_none_or(|selected| selected != field) {
+    field_focus_state_matching(state, |selected| selected == field)
+}
+
+pub(super) fn field_focus_state_matching(
+    state: &EditorState,
+    matches_selected: impl FnOnce(&FieldId) -> bool,
+) -> EditorFocusState {
+    if selected_field(state).is_none_or(|selected| !matches_selected(selected)) {
         return EditorFocusState::Unfocused;
     }
     match state.interaction {
@@ -56,14 +63,12 @@ pub(super) fn combined_focus_state(
     }
 }
 
-pub(super) fn value_for_field(
+pub(super) fn value_for_current(
     state: &EditorState,
-    field: &FieldId,
-    document: &MonthDocument,
+    focus: EditorFocusState,
+    current_value: impl FnOnce() -> String,
 ) -> String {
-    if state.interaction == InteractionState::FieldEditing
-        && selected_field(state).is_some_and(|selected| selected == field)
-    {
+    if focus == EditorFocusState::Editing {
         return state
             .edit_buffer
             .as_ref()
@@ -72,9 +77,9 @@ pub(super) fn value_for_field(
                 display.push('_');
                 display
             })
-            .unwrap_or_else(|| field.current_value_text(document));
+            .unwrap_or_else(current_value);
     }
-    field.current_value_text(document)
+    current_value()
 }
 
 pub(super) fn styled_value_cell_with_tone(

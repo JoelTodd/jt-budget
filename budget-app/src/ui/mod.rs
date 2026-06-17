@@ -5,6 +5,7 @@
 
 mod editor;
 mod failure;
+mod gate;
 mod guided;
 mod layout;
 mod navigation;
@@ -42,6 +43,9 @@ fn render_with_theme(
         frame.area(),
     );
     match route {
+        Route::RepositoryGate(state) => {
+            gate::render_repository_gate(frame, state, repo_root, theme);
+        }
         Route::Navigation(state) => navigation::render_navigation(frame, state, repo_root, theme),
         Route::GuidedCreation(state) => {
             if let Some(config) = config {

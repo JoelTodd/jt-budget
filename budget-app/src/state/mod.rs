@@ -12,5 +12,5 @@ pub use money_input::MoneyInput;
 pub use route_state::{
     CreateDialogue, DeleteDialogue, EditorState, FailureState, GuidedCreationState,
     InteractionState, MonthEntry, NavigationDialogue, NavigationState, PersistenceState,
-    RenameDialogue, RetryTarget, Route, SyncState,
+    RenameDialogue, RepositoryGateState, RetryTarget, Route, SyncState,
 };

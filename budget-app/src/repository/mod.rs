@@ -17,7 +17,7 @@ use fs4::fs_std::FileExt;
 use tracing::info;
 
 use self::fs_store::ensure_directory_missing_or_empty;
-use self::git_repo::{GitRepo, clone_from_remote};
+use self::git_repo::{GitRepo, TrackedCommitOutcome, clone_from_remote};
 use self::month_store::MonthStore;
 
 #[derive(Debug)]
@@ -39,16 +39,12 @@ pub struct LoadedMonth {
     pub calculated: CalculatedMonth,
 }
 
+pub(crate) type MonthFileFingerprint = Vec<(MonthId, u64)>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SyncOutcome {
     Synced,
     PushFailed(String),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PushPolicy {
-    Strict,
-    ReportOnly,
 }
 
 impl Repository {
@@ -218,15 +214,13 @@ impl Repository {
             .lock_exclusive()
             .with_context(|| format!("acquiring lock on `{}`", lock_path.display()))?;
 
-        let git = GitRepo::new(root.clone());
-        git.ensure_repository()?;
-
         let config_text = fs::read_to_string(root.join("config.toml"))
             .context("reading repository config.toml")?;
         let config: AppConfig = toml::from_str(&config_text).context("parsing config.toml")?;
         config.validate().context("validating config.toml")?;
         ensure!(months_dir.is_dir(), "`{}` is missing", months_dir.display());
-        let sync_enabled = git.has_remote_named("origin")?;
+        let git = GitRepo::new(root.clone());
+        let sync_enabled = git.has_remote_named_for_startup("origin")?;
         let months = MonthStore::new(months_dir, config.clone());
 
         let repository = Self {
@@ -262,6 +256,23 @@ impl Repository {
         self.months.list_months()
     }
 
+    pub(crate) fn list_months_with_fingerprint(
+        &self,
+    ) -> Result<(Vec<LoadedMonth>, MonthFileFingerprint)> {
+        self.months.list_months_with_fingerprint()
+    }
+
+    pub(crate) fn month_file_fingerprint(&self) -> Result<MonthFileFingerprint> {
+        self.months.month_file_fingerprint()
+    }
+
+    pub(crate) fn month_file_fingerprint_for_month(
+        &self,
+        month: MonthId,
+    ) -> Result<(MonthId, u64)> {
+        self.months.month_file_fingerprint_for_month(month)
+    }
+
     /// Loads a single month by its stable month identifier.
     pub fn load_month_by_id(&self, month: MonthId) -> Result<LoadedMonth> {
         self.months.load_month_by_id(month)
@@ -277,38 +288,104 @@ impl Repository {
         self.months.create_month_draft(month)
     }
 
+    pub(crate) fn create_month_draft_with_cached_previous(
+        &self,
+        month: MonthId,
+        cached_previous: Option<(MonthId, &CalculatedMonth, u64)>,
+    ) -> Result<MonthDocument> {
+        self.months
+            .create_month_draft_with_cached_previous(month, cached_previous)
+    }
+
     /// Persists a month, commits the change, and pushes it when sync is enabled.
     pub fn save_month(&self, document: &mut MonthDocument) -> Result<()> {
+        self.save_month_local_commit(document)?;
+        self.push_committed_changes()?;
+        Ok(())
+    }
+
+    /// Persists a month and commits it locally without pushing.
+    pub(crate) fn save_month_local_commit(&self, document: &mut MonthDocument) -> Result<()> {
+        let existed_before_write = self.months.write_month(document)?;
+        let relative_path = self.relative_month_path(document.month);
+        let message = format!("Update budget month {}", document.month);
+        if existed_before_write {
+            match self
+                .git
+                .commit_tracked_path(&relative_path, &message)
+                .context("committing tracked month file")?
+            {
+                TrackedCommitOutcome::Committed => {
+                    return Ok(());
+                }
+                TrackedCommitOutcome::PathNotTracked => {}
+            }
+        }
+
+        self.git
+            .stage_and_commit_paths(&[relative_path], &message)
+            .context("staging repository changes")?;
+        Ok(())
+    }
+
+    /// Persists a month file without committing it.
+    pub(crate) fn save_month_file_only(&self, document: &mut MonthDocument) -> Result<()> {
         self.months.write_month(document)?;
-        self.finalise_local_mutation(
-            &[self.relative_month_path(document.month)],
-            &format!("Update budget month {}", document.month),
-            PushPolicy::Strict,
-        )?;
+        Ok(())
+    }
+
+    /// Commits a previously persisted month file and pushes when sync is enabled.
+    pub(crate) fn commit_month_file(&self, month: MonthId, message: &str) -> Result<()> {
+        self.finalise_local_mutation(&[self.relative_month_path(month)], message)?;
         Ok(())
     }
 
     /// Renames a month file, commits the local rename, and then attempts to push.
-    pub fn rename_month(&self, source: MonthId, target: MonthId) -> Result<SyncOutcome> {
-        self.months.rename_month(source, target)?;
-        self.finalise_local_mutation(
-            &[
-                self.relative_month_path(source),
-                self.relative_month_path(target),
-            ],
-            &format!("Rename budget month {source} to {target}"),
-            PushPolicy::ReportOnly,
-        )
+    pub fn rename_month(
+        &self,
+        source: MonthId,
+        target: MonthId,
+    ) -> Result<(SyncOutcome, LoadedMonth)> {
+        let loaded = self.rename_month_local_commit(source, target)?;
+        let outcome = self.push_after_local_commit()?;
+        Ok((outcome, loaded))
+    }
+
+    /// Renames a month file and commits the local rename without pushing.
+    pub(crate) fn rename_month_local_commit(
+        &self,
+        source: MonthId,
+        target: MonthId,
+    ) -> Result<LoadedMonth> {
+        let loaded = self.months.rename_month(source, target)?;
+        self.git
+            .stage_and_commit_paths(
+                &[
+                    self.relative_month_path(source),
+                    self.relative_month_path(target),
+                ],
+                &format!("Rename budget month {source} to {target}"),
+            )
+            .context("staging repository changes")?;
+        Ok(loaded)
     }
 
     /// Deletes a month file, commits the local deletion, and then attempts to push.
     pub fn delete_month(&self, month: MonthId) -> Result<SyncOutcome> {
+        self.delete_month_local_commit(month)?;
+        self.push_after_local_commit()
+    }
+
+    /// Deletes a month file and commits the local deletion without pushing.
+    pub(crate) fn delete_month_local_commit(&self, month: MonthId) -> Result<()> {
         self.months.delete_month(month)?;
-        self.finalise_local_mutation(
-            &[self.relative_month_path(month)],
-            &format!("Delete budget month {month}"),
-            PushPolicy::ReportOnly,
-        )
+        self.git
+            .stage_and_commit_paths(
+                &[self.relative_month_path(month)],
+                &format!("Delete budget month {month}"),
+            )
+            .context("staging repository changes")?;
+        Ok(())
     }
 
     /// Retries a push for changes that were already committed locally.
@@ -327,9 +404,6 @@ impl Repository {
         }
         info!("running repository gate for {}", self.root.display());
         self.git
-            .verify_branch_upstream()
-            .context("checking branch upstream")?;
-        self.git
             .pull_ff_only()
             .context("pulling latest budget data")?;
         Ok(())
@@ -343,18 +417,12 @@ impl Repository {
         &self,
         relative_paths: &[PathBuf],
         message: &str,
-        push_policy: PushPolicy,
     ) -> Result<SyncOutcome> {
         self.git
             .stage_and_commit_paths(relative_paths, message)
             .context("staging repository changes")?;
-        match push_policy {
-            PushPolicy::Strict => {
-                self.push_committed_changes()?;
-                Ok(SyncOutcome::Synced)
-            }
-            PushPolicy::ReportOnly => self.push_after_local_commit(),
-        }
+        self.push_committed_changes()?;
+        Ok(SyncOutcome::Synced)
     }
 
     fn push_after_local_commit(&self) -> Result<SyncOutcome> {
@@ -421,6 +489,22 @@ mod tests {
     }
 
     #[test]
+    fn open_repo_gate_blocks_when_origin_branch_has_no_upstream() {
+        let temp = tempdir().unwrap();
+        let remote = temp.path().join("remote.git");
+        git(temp.path(), &["init", "--bare", remote.to_str().unwrap()]);
+
+        let repo = temp.path().join("budget");
+        Repository::init(&repo, Some(remote.to_str().unwrap())).unwrap();
+        git(&repo, &["config", "--unset", "branch.main.remote"]);
+        git(&repo, &["config", "--unset", "branch.main.merge"]);
+
+        let error = Repository::open(&repo).unwrap_err();
+
+        assert!(error.to_string().contains("pulling latest budget data"));
+    }
+
+    #[test]
     fn init_repo_without_remote_opens_repo_gate() {
         let temp = tempdir().unwrap();
         let repo = temp.path().join("budget");
@@ -433,6 +517,27 @@ mod tests {
         assert!(!opened.sync_enabled());
         assert!(opened.root().join("config.toml").exists());
         assert!(opened.list_months().unwrap().is_empty());
+    }
+
+    #[test]
+    fn open_rejects_budget_shaped_folder_that_is_not_git_repo() {
+        let temp = tempdir().unwrap();
+        let repo = temp.path().join("budget");
+        fs::create_dir_all(repo.join("months")).unwrap();
+        fs::create_dir_all(repo.join("meta")).unwrap();
+        fs::write(
+            repo.join("config.toml"),
+            toml::to_string_pretty(&AppConfig::default_mvp()).unwrap(),
+        )
+        .unwrap();
+
+        let error = Repository::open(&repo).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("git remote get-url origin failed")
+        );
     }
 
     #[test]
@@ -566,6 +671,31 @@ mod tests {
     }
 
     #[test]
+    fn save_existing_untracked_month_falls_back_to_staging() {
+        let temp = tempdir().unwrap();
+        let repo_path = temp.path().join("budget");
+        Repository::init(&repo_path, None).unwrap();
+
+        let repository = Repository::open(&repo_path).unwrap();
+        let mut month = repository
+            .create_month_draft(MonthId::parse("2026-03").unwrap())
+            .unwrap();
+        fs::write(
+            repo_path.join("months/2026-03.toml"),
+            month.to_pretty_toml(repository.config()).unwrap(),
+        )
+        .unwrap();
+        month.accounts.insert("current_account".to_owned(), 123_456);
+
+        repository.save_month(&mut month).unwrap();
+
+        let log = git_capture(&repo_path, &["log", "--oneline", "--max-count", "1"]);
+        assert!(log.contains("Update budget month 2026-03"));
+        let changed_files = git_capture(&repo_path, &["show", "--name-only", "--format="]);
+        assert!(changed_files.contains("months/2026-03.toml"));
+    }
+
+    #[test]
     fn rename_month_updates_persisted_identifier() {
         let temp = tempdir().unwrap();
         let repo_path = temp.path().join("budget");
@@ -576,13 +706,14 @@ mod tests {
             .create_month_draft(MonthId::parse("2026-03").unwrap())
             .unwrap();
         repository.save_month(&mut month).unwrap();
-        let outcome = repository
+        let (outcome, renamed) = repository
             .rename_month(
                 MonthId::parse("2026-03").unwrap(),
                 MonthId::parse("2026-04").unwrap(),
             )
             .unwrap();
         assert_eq!(outcome, SyncOutcome::Synced);
+        assert_eq!(renamed.document.month, MonthId::parse("2026-04").unwrap());
 
         assert!(!repo_path.join("months/2026-03.toml").exists());
         let renamed_path = repo_path.join("months/2026-04.toml");
@@ -639,12 +770,13 @@ mod tests {
             ],
         );
 
-        let outcome = repository
+        let (outcome, renamed) = repository
             .rename_month(
                 MonthId::parse("2026-03").unwrap(),
                 MonthId::parse("2026-04").unwrap(),
             )
             .unwrap();
+        assert_eq!(renamed.document.month, MonthId::parse("2026-04").unwrap());
 
         match outcome {
             SyncOutcome::PushFailed(message) => {
@@ -735,12 +867,18 @@ mod tests {
     }
 
     fn git(root: &Path, args: &[&str]) {
-        let status = Command::new("git")
+        let output = Command::new("git")
             .args(args)
             .current_dir(root)
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success(), "git {:?} failed", args);
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout:\n{}\nstderr:\n{}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     fn git_capture(root: &Path, args: &[&str]) -> String {

@@ -3,7 +3,8 @@ use budget_core::{CalculatedMonth, MonthDocument, calculate_month};
 
 use super::App;
 use crate::state::{
-    EditorState, FailureState, GuidedCreationState, PersistenceState, RetryTarget, Route, SyncState,
+    EditorState, FailureState, GuidedCreationState, NavigationState, PersistenceState, RetryTarget,
+    Route, SyncState,
 };
 
 pub(super) trait PersistableRouteState: Sized {
@@ -116,4 +117,116 @@ impl App {
             }
         }
     }
+
+    pub(super) fn process_pending_sync(&mut self) -> Result<bool> {
+        let should_sync = match &self.route {
+            Route::Navigation(state) => {
+                state.persistence == PersistenceState::Clean && state.sync == SyncState::SyncPending
+            }
+            Route::GuidedCreation(state) => {
+                state.persistence == PersistenceState::Clean && state.sync == SyncState::SyncPending
+            }
+            Route::MonthEditing(state) => {
+                state.persistence == PersistenceState::Clean && state.sync == SyncState::SyncPending
+            }
+            _ => false,
+        };
+        if !should_sync {
+            return Ok(false);
+        }
+
+        match std::mem::replace(&mut self.route, Route::Shutdown) {
+            Route::Navigation(state) => {
+                self.push_navigation_state(state)?;
+                Ok(true)
+            }
+            Route::GuidedCreation(state) => {
+                self.push_guided_state(state)?;
+                Ok(true)
+            }
+            Route::MonthEditing(state) => {
+                self.push_editor_state(state)?;
+                Ok(true)
+            }
+            route => {
+                self.route = route;
+                Ok(false)
+            }
+        }
+    }
+
+    pub(super) fn push_navigation_state(&mut self, mut state: NavigationState) -> Result<()> {
+        state.sync = SyncState::Syncing;
+        let selected = state.selected_month().map(|entry| entry.document.month);
+        let repository = self.repository()?;
+        match repository.retry_pending_push() {
+            Ok(()) => {
+                state.sync = SyncState::Synced;
+                state.message = Some("Repository changes synced".to_owned());
+                self.route = Route::Navigation(state);
+            }
+            Err(error) => {
+                state.sync = SyncState::SyncFailed;
+                self.route = Route::BlockingFailure(FailureState {
+                    title: "Could not sync repository changes".to_owned(),
+                    message: error.to_string(),
+                    retry: RetryTarget::PushNavigation(selected),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn push_guided_state(&mut self, mut state: GuidedCreationState) -> Result<()> {
+        state.set_sync(SyncState::Syncing);
+        let repository = self.repository()?;
+        match repository.retry_pending_push() {
+            Ok(()) => {
+                let message =
+                    self.autosave_message(sync_success_message(&state.message, "Draft autosaved"))?;
+                state.set_sync(SyncState::Synced);
+                state.set_message(Some(message));
+                self.route = Route::GuidedCreation(state);
+            }
+            Err(error) => {
+                state.set_sync(SyncState::SyncFailed);
+                self.route = Route::BlockingFailure(FailureState {
+                    title: format!("Could not sync {}", state.document.month),
+                    message: error.to_string(),
+                    retry: RetryTarget::GuidedPush(state),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn push_editor_state(&mut self, mut state: EditorState) -> Result<()> {
+        state.set_sync(SyncState::Syncing);
+        let repository = self.repository()?;
+        match repository.retry_pending_push() {
+            Ok(()) => {
+                let message =
+                    self.autosave_message(sync_success_message(&state.message, "Month autosaved"))?;
+                state.set_sync(SyncState::Synced);
+                state.set_message(Some(message));
+                self.route = Route::MonthEditing(state);
+            }
+            Err(error) => {
+                state.set_sync(SyncState::SyncFailed);
+                self.route = Route::BlockingFailure(FailureState {
+                    title: format!("Could not sync {}", state.document.month),
+                    message: error.to_string(),
+                    retry: RetryTarget::EditorPush(state),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+fn sync_success_message<'a>(pending_message: &'a Option<String>, fallback: &'a str) -> &'a str {
+    pending_message
+        .as_deref()
+        .and_then(|message| message.strip_suffix("; sync pending"))
+        .unwrap_or(fallback)
 }

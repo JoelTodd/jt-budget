@@ -9,9 +9,9 @@ use self::section_table::{SectionTableSpec, render_section_table};
 use super::layout::{EditorLayoutProfile, PanelChrome, section_height};
 use super::theme::{Tone, UiTheme, section_tone, status_value_style, validation_tone};
 use super::widgets::{
-    amount_cell_with_style, combined_focus_state, field_focus_state, focused_row_style, hint_lines,
-    labelled_row_cell, panel_block, section_focus_state, selected_field, status_line,
-    styled_value_cell_with_tone, value_for_field,
+    amount_cell_with_style, combined_focus_state, field_focus_state_matching, focused_row_style,
+    hint_lines, labelled_row_cell, panel_block, section_focus_state, selected_field, status_line,
+    styled_value_cell_with_tone, value_for_current,
 };
 use crate::state::{EditorState, FieldId, SectionId};
 
@@ -301,8 +301,10 @@ fn render_accounts(
     theme: &UiTheme,
 ) {
     let rows = state.calculated.account_rows.iter().map(|row| {
-        let field = FieldId::Account(row.id.clone());
-        let focus = field_focus_state(state, &field);
+        let focus = field_focus_state_matching(
+            state,
+            |field| matches!(field, FieldId::Account(id) if id == &row.id),
+        );
         Row::new(vec![
             labelled_row_cell(&row.label, focus),
             Cell::from(Span::styled(
@@ -316,7 +318,7 @@ fn render_accounts(
                 }),
             )),
             styled_value_cell_with_tone(
-                value_for_field(state, &field, &state.document),
+                value_for_current(state, focus, || row.raw_balance.format()),
                 focus,
                 Tone::Accounts,
                 theme,
@@ -381,13 +383,19 @@ fn render_timing(
 ) {
     let correction = FieldId::PreviousMonthSpendingCorrection;
     let investment = FieldId::InvestmentNotYetSent;
-    let correction_focus = field_focus_state(state, &correction);
-    let investment_focus = field_focus_state(state, &investment);
+    let correction_focus = field_focus_state_matching(state, |field| field == &correction);
+    let investment_focus = field_focus_state_matching(state, |field| field == &investment);
     let rows = vec![
         Row::new(vec![
             labelled_row_cell("General spending over/under", correction_focus),
             styled_value_cell_with_tone(
-                value_for_field(state, &correction, &state.document),
+                value_for_current(state, correction_focus, || {
+                    state
+                        .calculated
+                        .timing
+                        .previous_month_spending_correction_raw
+                        .format()
+                }),
                 correction_focus,
                 Tone::Timing,
                 theme,
@@ -405,7 +413,9 @@ fn render_timing(
         Row::new(vec![
             labelled_row_cell("Investment not yet sent", investment_focus),
             styled_value_cell_with_tone(
-                value_for_field(state, &investment, &state.document),
+                value_for_current(state, investment_focus, || {
+                    state.calculated.timing.investment_not_yet_sent_raw.format()
+                }),
                 investment_focus,
                 Tone::Timing,
                 theme,
@@ -455,12 +465,14 @@ fn render_earmarks(
     theme: &UiTheme,
 ) {
     let rows = state.calculated.earmark_rows.iter().map(|row| {
-        let field = FieldId::Earmark(row.id.clone());
-        let focus = field_focus_state(state, &field);
+        let focus = field_focus_state_matching(
+            state,
+            |field| matches!(field, FieldId::Earmark(id) if id == &row.id),
+        );
         Row::new(vec![
             labelled_row_cell(&row.label, focus),
             styled_value_cell_with_tone(
-                value_for_field(state, &field, &state.document),
+                value_for_current(state, focus, || row.amount.format()),
                 focus,
                 Tone::Earmarks,
                 theme,
@@ -512,21 +524,25 @@ fn render_pots(
         .pot_rows
         .iter()
         .map(|row| {
-            let carried = FieldId::PotCarried(row.id.clone());
-            let change = FieldId::PotChange(row.id.clone());
-            let carried_focus = field_focus_state(state, &carried);
-            let change_focus = field_focus_state(state, &change);
+            let carried_focus = field_focus_state_matching(
+                state,
+                |field| matches!(field, FieldId::PotCarried(id) if id == &row.id),
+            );
+            let change_focus = field_focus_state_matching(
+                state,
+                |field| matches!(field, FieldId::PotChange(id) if id == &row.id),
+            );
             let row_focus = combined_focus_state(carried_focus, change_focus);
             Row::new(vec![
                 labelled_row_cell(&row.label, row_focus),
                 styled_value_cell_with_tone(
-                    value_for_field(state, &carried, &state.document),
+                    value_for_current(state, carried_focus, || row.carried_over.format()),
                     carried_focus,
                     Tone::Pots,
                     theme,
                 ),
                 styled_value_cell_with_tone(
-                    value_for_field(state, &change, &state.document),
+                    value_for_current(state, change_focus, || row.monthly_change.format()),
                     change_focus,
                     Tone::Pots,
                     theme,

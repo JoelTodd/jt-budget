@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::path::Path;
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -8,7 +9,7 @@ use super::layout::{PanelChrome, centred_rect};
 use super::theme::{Tone, UiTheme, month_state_style, validation_tone};
 use super::widgets::{
     abbreviate_path, amount_cell_with_style, compact_summary_text, format_updated_timestamp,
-    hint_lines, panel_block,
+    hint_lines, panel_block, status_line,
 };
 use crate::state::{DeleteDialogue, NavigationDialogue, NavigationState};
 
@@ -42,6 +43,17 @@ pub(super) fn render_navigation(
         },
         theme,
     ));
+    if let Some(message) = &state.message {
+        header_lines.push(Line::from(Span::styled(
+            message.clone(),
+            theme.bright_style(),
+        )));
+    }
+    if state.persistence != crate::state::PersistenceState::Clean
+        || state.sync != crate::state::SyncState::Synced
+    {
+        header_lines.push(status_line(state.persistence, state.sync, theme));
+    }
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -74,7 +86,13 @@ pub(super) fn render_navigation(
             .split(layout[1])
     };
 
-    let rows = state.months.iter().map(|entry| {
+    let visible_months = visible_month_window(
+        state.months.len(),
+        state.selected,
+        body[0].height.saturating_sub(3) as usize,
+    );
+    let visible_start = visible_months.start;
+    let rows = state.months[visible_months].iter().map(|entry| {
         let status = if entry.calculated.validation.is_valid {
             "finalised"
         } else {
@@ -127,7 +145,7 @@ pub(super) fn render_navigation(
     .row_highlight_style(theme.selected_style());
     let mut table_state = TableState::default();
     if !state.months.is_empty() {
-        table_state.select(Some(state.selected));
+        table_state.select(Some(state.selected.saturating_sub(visible_start)));
     }
     frame.render_stateful_widget(months_table, body[0], &mut table_state);
 
@@ -150,6 +168,18 @@ pub(super) fn render_navigation(
     if let Some(dialogue) = &state.dialogue {
         render_navigation_dialogue(frame, dialogue, theme);
     }
+}
+
+fn visible_month_window(total: usize, selected: usize, visible_rows: usize) -> Range<usize> {
+    if total == 0 {
+        return 0..0;
+    }
+    let visible_rows = visible_rows.max(1).min(total);
+    let selected = selected.min(total - 1);
+    let before = visible_rows / 2;
+    let mut start = selected.saturating_sub(before);
+    start = start.min(total - visible_rows);
+    start..start + visible_rows
 }
 
 fn render_navigation_dialogue(
@@ -250,4 +280,18 @@ fn render_dialogue(
             .wrap(Wrap { trim: false }),
         area,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::visible_month_window;
+
+    #[test]
+    fn visible_month_window_keeps_selection_in_rendered_slice() {
+        assert_eq!(visible_month_window(0, 0, 10), 0..0);
+        assert_eq!(visible_month_window(5, 0, 10), 0..5);
+        assert_eq!(visible_month_window(120, 0, 8), 0..8);
+        assert_eq!(visible_month_window(120, 60, 8), 56..64);
+        assert_eq!(visible_month_window(120, 119, 8), 112..120);
+    }
 }

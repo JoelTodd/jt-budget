@@ -6,11 +6,18 @@ use super::money_input::MoneyInput;
 /// Top-level application route.
 #[derive(Clone, Debug)]
 pub enum Route {
+    RepositoryGate(RepositoryGateState),
     Navigation(NavigationState),
     GuidedCreation(GuidedCreationState),
     MonthEditing(EditorState),
     BlockingFailure(FailureState),
     Shutdown,
+}
+
+/// State shown while the repository is being checked before normal use.
+#[derive(Clone, Debug)]
+pub struct RepositoryGateState {
+    pub message: String,
 }
 
 /// State for the month list and its modal dialogues.
@@ -19,6 +26,10 @@ pub struct NavigationState {
     pub months: Vec<MonthEntry>,
     pub selected: usize,
     pub dialogue: Option<NavigationDialogue>,
+    pub fingerprint: Option<Vec<(MonthId, u64)>>,
+    pub message: Option<String>,
+    pub persistence: PersistenceState,
+    pub sync: SyncState,
 }
 
 impl NavigationState {
@@ -27,6 +38,22 @@ impl NavigationState {
             months,
             selected: 0,
             dialogue: None,
+            fingerprint: None,
+            message: None,
+            persistence: PersistenceState::Clean,
+            sync: SyncState::Synced,
+        }
+    }
+
+    pub fn with_fingerprint(months: Vec<MonthEntry>, fingerprint: Vec<(MonthId, u64)>) -> Self {
+        Self {
+            months,
+            selected: 0,
+            dialogue: None,
+            fingerprint: Some(fingerprint),
+            message: None,
+            persistence: PersistenceState::Clean,
+            sync: SyncState::Synced,
         }
     }
 
@@ -98,6 +125,7 @@ pub struct EditorState {
     pub interaction: InteractionState,
     pub persistence: PersistenceState,
     pub sync: SyncState,
+    pub return_navigation: Option<Box<NavigationState>>,
 }
 
 /// Route state for failures that must block user progress until retried or quit.
@@ -115,7 +143,9 @@ pub enum RetryTarget {
     CreateMonth(MonthId),
     CreateDraft(GuidedCreationState),
     GuidedSave(GuidedCreationState),
+    GuidedPush(GuidedCreationState),
     EditorSave(EditorState),
+    EditorPush(EditorState),
     OpenMonth(MonthId),
     RenameMonth { source: MonthId, target: MonthId },
     DeleteMonth(MonthId),

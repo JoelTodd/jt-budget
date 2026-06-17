@@ -64,6 +64,7 @@ pub(super) fn editor_route_with_state(
         interaction,
         persistence: PersistenceState::Clean,
         sync: SyncState::Synced,
+        return_navigation: None,
     })
 }
 
@@ -99,14 +100,10 @@ pub(super) fn navigation_route(config: &AppConfig) -> Route {
     });
     document.meta.updated_at = Some("2026-03-31T14:30:06.464168849Z".to_owned());
     let calculated = calculate_month(config, &document).unwrap();
-    Route::Navigation(NavigationState {
-        months: vec![MonthEntry {
-            document,
-            calculated,
-        }],
-        selected: 0,
-        dialogue: None,
-    })
+    Route::Navigation(NavigationState::new(vec![MonthEntry {
+        document,
+        calculated,
+    }]))
 }
 
 pub(super) fn guided_route(config: &AppConfig) -> Route {

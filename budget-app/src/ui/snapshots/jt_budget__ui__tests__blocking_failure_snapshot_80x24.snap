@@ -1,0 +1,21 @@
+---
+source: budget-app/src/ui/tests.rs
+expression: "buffer_to_string(draw_route(route, Some(config), width, height))"
+---
+
+
+
+
+
+
+
+            ┌Blocking Failure──────────────────────────────────────┐
+            │Repository blocked                                    │
+            │                                                      │
+            │pulling latest budget data failed: remote rejected    │
+            │update                                                │
+            │                                                      │
+            │r retry                                               │
+            │q quit                                                │
+            │                                                      │
+            └──────────────────────────────────────────────────────┘
