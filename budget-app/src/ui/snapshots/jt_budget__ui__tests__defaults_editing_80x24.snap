@@ -1,0 +1,28 @@
+---
+source: budget-app/src/ui/tests.rs
+expression: "buffer_to_string(draw_route(route, Some(config), width, height))"
+---
+┌Defaults──────────────────────────────────────────────────────────────────────┐
+│Prefills for new months. Existing months keep their amounts.                  │
+│Type amount | Enter save | Esc cancel                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌Monthly defaults - Editing────────────────────────────────────────────────────┐
+│  Default                Name                               Amount            │
+│  Savings contribution   Travel fund                                    £90.00│
+│  Savings contribution   Home upkeep                                    £55.00│
+│  Savings contribution   Emergency buffer                               £35.00│
+│> Next-month earmark     Subscriptions                                 £105.00│
+│  Next-month earmark     General spending                              £320.00│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌Status────────────────────────────────────────────────────────────────────────┐
+│Typing replaces the amount. Enter saves and syncs this default.               │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘

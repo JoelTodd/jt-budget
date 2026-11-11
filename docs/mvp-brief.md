@@ -245,11 +245,12 @@ That is enough to jog the user’s memory without turning history into a second 
 
 ## Config
 
-There should be no settings screen in the MVP.
-
-The app should use a reasonably comprehensive config file.
-
-A config file is sufficient and preferable for a Rust TUI of this kind.
+The app uses an inspectable config file for structure and defaults. A small
+Defaults screen, opened with `s` from the month list, allows editing all monthly
+savings contributions and next-month earmarks. Each confirmed edit saves and
+syncs `config.toml`; save or sync failures block until retried or quit. Defaults
+prefill new months without changing amounts in existing drafts or past months.
+Structural configuration remains file-based.
 
 ### Config Should Define
 
@@ -407,7 +408,7 @@ The history view can derive its compact summary from the month record rather tha
 - multiple users
 - multiple budgets
 - cloud backend service
-- GUI settings screen
+- structural settings editor
 - detailed change history within a month
 
 ## What Success Looks Like

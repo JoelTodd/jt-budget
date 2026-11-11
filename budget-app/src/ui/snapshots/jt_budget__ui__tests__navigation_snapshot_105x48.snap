@@ -4,7 +4,7 @@ expression: "buffer_to_string(draw_route(route, Some(config), width, height))"
 ---
 ┌Navigation─────────────────────────────────────────────────────────────────────────────────────────────┐
 │Repo: /tmp/budget                                                                                      │
-│Enter open | n new | m rename | d delete | q quit                                                      │
+│Enter open | n new | s defaults | m rename | d delete | q quit                                         │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                   State      Diff           Updated                                                   │

@@ -18,6 +18,13 @@ Repo discovery and first-run setup happen before this TUI lifecycle starts. Once
 6. `BlockingFailure`
 7. `Shutdown`
 
+`DefaultsEditing` is an additional route entered with `s` from `Navigation`.
+It edits monthly contribution and earmark defaults in `config.toml`. Confirmed
+fields save and sync before further input; failures enter `BlockingFailure`
+with a retry target that preserves the requested defaults. `Esc` cancels an
+active field edit, or returns to `Navigation` when no field is being edited.
+Existing month documents are not changed.
+
 Only one top-level state is active at a time.
 
 ---

@@ -75,7 +75,8 @@ The bundled Base24 palette lives in [`budget-app/theme.toml`](budget-app/theme.t
 
 ## Main keys
 
-- Navigation: `n` create month, `Enter` open month, `m` rename month, `d` delete month, `r` refresh, `q` quit.
+- Navigation: `n` create month, `Enter` open month, `s` defaults, `m` rename month, `d` delete month, `r` refresh, `q` quit.
+- Defaults: `Tab`/`Up`/`Down` move, `Enter` edit/save, `Esc` cancel/back. Savings contributions and earmarks prefill new months; each confirmed change saves and syncs.
 - Guided creation: type amount, `Enter` save/advance, `Esc` back.
 - Monthly sheet: `Tab`/`Up`/`Down` move, `Enter` edit field, `Esc` back, `q` quit.
 

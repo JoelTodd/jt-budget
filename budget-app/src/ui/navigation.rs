@@ -45,11 +45,19 @@ fn render_navigation_header(
     header_lines.extend(hint_lines(
         frame.area().width,
         if compact {
-            &["Enter open", "n new", "m rename", "d delete", "q quit"]
+            &[
+                "Enter open",
+                "n new",
+                "s defaults",
+                "m rename",
+                "d delete",
+                "q quit",
+            ]
         } else {
             &[
                 "Enter open",
                 "n new",
+                "s defaults",
                 "m rename",
                 "d delete",
                 "r refresh",

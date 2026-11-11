@@ -10,6 +10,7 @@ pub enum Route {
     Navigation(NavigationState),
     GuidedCreation(GuidedCreationState),
     MonthEditing(EditorState),
+    DefaultsEditing(super::DefaultsState),
     BlockingFailure(FailureState),
     Shutdown,
 }
@@ -150,6 +151,7 @@ pub enum RetryTarget {
     RenameMonth { source: MonthId, target: MonthId },
     DeleteMonth(MonthId),
     PushNavigation(Option<MonthId>),
+    DefaultsSave(super::DefaultsState),
 }
 
 /// Whether the monthly sheet is navigating fields or editing one.

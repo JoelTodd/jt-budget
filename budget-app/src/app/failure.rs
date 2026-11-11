@@ -37,6 +37,7 @@ impl App {
             RetryTarget::RenameMonth { source, target } => self.rename_month(source, target),
             RetryTarget::DeleteMonth(month) => self.delete_month(month),
             RetryTarget::PushNavigation(selected) => self.push_and_reload_navigation(selected),
+            RetryTarget::DefaultsSave(state) => self.persist_defaults(state),
         }
     }
 }

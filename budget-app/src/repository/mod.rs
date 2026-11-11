@@ -4,6 +4,7 @@
 //! operations may save locally first, but failures to pull or push are surfaced
 //! as blocking states rather than silently ignored.
 
+mod config_store;
 mod fs_store;
 mod git_repo;
 mod month_store;
@@ -232,7 +233,11 @@ impl Repository {
             _meta_dir: meta_dir,
             lock_handle,
         };
+        let mut repository = repository;
         repository.pull_latest()?;
+        // A pull may have changed defaults on another machine. Keep both the
+        // repository and month store aligned with the synced configuration.
+        repository.reload_config()?;
         Ok(repository)
     }
 

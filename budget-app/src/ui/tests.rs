@@ -28,6 +28,7 @@ fn assert_snapshot_for_size(
 }
 
 mod chrome;
+mod defaults;
 mod editor;
 mod fixtures;
 mod guided;

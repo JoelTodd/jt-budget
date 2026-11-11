@@ -20,6 +20,7 @@ use crate::state::{
     Route, SyncState,
 };
 
+mod defaults;
 mod editor_return_cache;
 mod fixtures;
 mod git_support;

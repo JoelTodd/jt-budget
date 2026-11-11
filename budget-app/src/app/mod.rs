@@ -3,6 +3,7 @@
 //! Input handling lives in the route-specific submodules, while this module
 //! owns terminal setup, dispatch, and the shared repository/config handles.
 
+mod defaults;
 mod document;
 mod editor;
 mod failure;
@@ -111,6 +112,7 @@ impl App {
             Route::Navigation(state) => self.handle_navigation_key(state, key),
             Route::GuidedCreation(state) => self.handle_guided_key(state, key),
             Route::MonthEditing(state) => self.handle_editor_key(state, key),
+            Route::DefaultsEditing(state) => self.handle_defaults_key(state, key),
             Route::BlockingFailure(state) => self.handle_failure_key(state, key),
             Route::Shutdown => Ok(()),
         }

@@ -1,10 +1,10 @@
 ---
 source: budget-app/src/ui/tests.rs
-expression: "buffer_to_string(draw_route(&route, Some(&config), 120, 40))"
+expression: "buffer_to_string(draw_route(route, Some(config), width, height))"
 ---
 ┌Navigation────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │Repo: /tmp/budget                                                                                                     │
-│Enter open | n new | m rename | d delete | r refresh | q quit                                                         │
+│Enter open | n new | s defaults | m rename | d delete | r refresh | q quit                                            │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────┐┌Summary───────────────────────────────────────────────────────────────┐
 │           State      Diff         Updated    ││Accounts £2600.00 | Timing Adjustments £0.00                          │

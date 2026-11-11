@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 const DEFAULT_BRANCH: &str = "main";
 
 #[derive(Clone, Debug)]
@@ -156,6 +156,24 @@ impl GitRepo {
 
     pub(super) fn push(&self) -> Result<()> {
         self.run(["push"]).map(|_| ())
+    }
+
+    pub(super) fn commit_monthly_defaults(&self) -> Result<()> {
+        // A push retry must not attempt an empty commit or include unrelated
+        // staged files in the user's budget repository.
+        if !self
+            .run(["diff", "--name-only", "HEAD", "--", "config.toml"])?
+            .is_empty()
+        {
+            ensure!(
+                self.commit_tracked_path(
+                    Path::new("config.toml"),
+                    "Update monthly budget defaults"
+                )? == TrackedCommitOutcome::Committed,
+                "config.toml must be tracked before defaults can be saved"
+            );
+        }
+        Ok(())
     }
 
     pub(super) fn is_work_tree(root: &Path) -> Result<bool> {

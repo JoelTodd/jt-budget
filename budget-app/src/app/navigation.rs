@@ -27,6 +27,12 @@ impl App {
         }
 
         match key.code {
+            KeyCode::Char('s') => {
+                self.route = Route::DefaultsEditing(crate::state::DefaultsState::new(
+                    self.config()?.clone(),
+                    state,
+                ));
+            }
             KeyCode::Char('q') => self.route = Route::Shutdown,
             KeyCode::Char('n') => {
                 state.dialogue = Some(NavigationDialogue::Create(CreateDialogue {

@@ -7,6 +7,8 @@ use tempfile::tempdir;
 
 use super::{Repository, SyncOutcome};
 
+mod defaults;
+
 #[test]
 fn init_repo_and_open_repo_gate() {
     let temp = tempdir().unwrap();

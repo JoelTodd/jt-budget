@@ -3,6 +3,7 @@
 //! Each submodule owns one slice of the visual surface, while this module keeps
 //! the public render API thin and stable for the runtime and tests.
 
+mod defaults;
 mod editor;
 mod failure;
 mod gate;
@@ -57,6 +58,7 @@ fn render_with_theme(
                 editor::render_editor(frame, state, theme);
             }
         }
+        Route::DefaultsEditing(state) => defaults::render_defaults(frame, state, theme),
         Route::BlockingFailure(state) => failure::render_failure(frame, state, theme),
         Route::Shutdown => {}
     }

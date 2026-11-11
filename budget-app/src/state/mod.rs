@@ -3,10 +3,12 @@
 //! These structures are intentionally plain data so the runtime and renderer
 //! can exchange route state without hidden side effects.
 
+mod defaults;
 mod field_catalog;
 mod money_input;
 mod route_state;
 
+pub use defaults::DefaultsState;
 pub use field_catalog::{FieldId, SectionId};
 pub use money_input::MoneyInput;
 pub use route_state::{
