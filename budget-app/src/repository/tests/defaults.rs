@@ -67,7 +67,15 @@ fn defaults_save_rejects_external_edits_structure_changes_and_negative_defaults(
 fn startup_uses_defaults_received_from_remote() {
     let temp = tempdir().unwrap();
     let remote = temp.path().join("remote.git");
-    git(temp.path(), &["init", "--bare", remote.to_str().unwrap()]);
+    git(
+        temp.path(),
+        &[
+            "init",
+            "--bare",
+            "--initial-branch=main",
+            remote.to_str().unwrap(),
+        ],
+    );
     let first = temp.path().join("first");
     Repository::init(&first, Some(remote.to_str().unwrap())).unwrap();
     let second = temp.path().join("second");
